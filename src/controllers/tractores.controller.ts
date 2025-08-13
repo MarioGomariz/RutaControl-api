@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { pool } from '../db/pool';
-import type { Tractor } from '../types/tractor';
+import { pool } from '../db/pool.js';
+import type { Tractor } from '../types/tractor.js';
 
 export async function listarTractores(_req: Request, res: Response) {
   try {

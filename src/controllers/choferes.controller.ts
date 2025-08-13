@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
-import { pool } from '../db/pool';
-import { hashPassword } from '../utils/password';
+import { pool } from '../db/pool.js';
+import { hashPassword } from '../utils/password.js';
 import crypto from 'crypto';
-import type { Chofer } from '../types/chofer';
+import type { Chofer } from '../types/chofer.js';
 
 type CrearChoferBody = Chofer; // viene todo desde el front (sin id/usuario_id)
 

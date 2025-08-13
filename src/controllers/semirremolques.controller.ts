@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { pool } from '../db/pool';
-import type { Semirremolque } from '../types/semirremolque';
+import { pool } from '../db/pool.js';
+import type { Semirremolque } from '../types/semirremolque.js';
 
 export async function listarSemis(_req: Request, res: Response) {
   try {

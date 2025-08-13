@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { pool } from '../db/pool';
-import type { Servicio } from '../types/servicio';
+import { pool } from '../db/pool.js';
+import type { Servicio } from '../types/servicio.js';
 
 export async function listarServicios(_req: Request, res: Response) {
   try {

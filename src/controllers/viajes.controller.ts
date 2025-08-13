@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { pool } from '../db/pool';
-import type { Viaje, ViajeDestino } from '../types/viaje';
+import { pool } from '../db/pool.js';
+import type { Viaje, ViajeDestino } from '../types/viaje.js';
 
 /** GET /api/viajes */
 export async function listarViajes(_req: Request, res: Response) {
