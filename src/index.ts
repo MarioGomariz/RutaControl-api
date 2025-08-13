@@ -4,10 +4,10 @@ import cors from 'cors';
 import helmet from 'helmet';
 import authRoutes from './routes/auth.routes.js';
 import choferesRoutes from './routes/choferes.routes.js';
-import serviciosRoutes from './routes/servicios.routes';
-import tractoresRoutes from './routes/tractores.routes';
-import semisRoutes from './routes/semirremolques.routes';
-import viajesRoutes from './routes/viajes.routes';
+import serviciosRoutes from './routes/servicios.routes.js';
+import tractoresRoutes from './routes/tractores.routes.js';
+import semisRoutes from './routes/semirremolques.routes.js';
+import viajesRoutes from './routes/viajes.routes.js';
 import { pool } from './db/pool.js';
 
 const app = express();
