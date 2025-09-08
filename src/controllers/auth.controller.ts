@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
-import { pool } from '../db/pool.js';
+import { pool } from '../db/pool';
 import jwt from 'jsonwebtoken';
-import { comparePassword, hashPassword } from '../utils/password.js';
-import type { Usuario } from '../types/usuario.js';
+import { comparePassword, hashPassword } from '../utils/password';
+import type { Usuario } from '../types/usuario';
 
 type LoginBody = { usuario: string; password: string };
 
@@ -44,7 +44,7 @@ export async function createAdmin(req: Request<{}, {}, CreateAdminBody>, res: Re
     const hash = await hashPassword(password);
     const [result] = await pool.query(
       `INSERT INTO usuario (usuario, contrasena, rol_id, activo)
-       VALUES (?, ?, ?, 1, 1)`,
+       VALUES (?, ?, 1, 1)`,
       [usuario, hash]
     );
     return res.json({ id: (result as any).insertId });

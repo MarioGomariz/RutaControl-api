@@ -29,7 +29,7 @@ export async function obtenerViaje(req: Request<{ id: string }>, res: Response) 
     if (!viaje) return res.status(404).json({ error: 'Viaje no encontrado' });
 
     const [destinos] = await pool.query(
-      'SELECT id, orden, ubicacion FROM destinos WHERE viaje_id = ? ORDER BY orden ASC',
+      'SELECT * FROM destinos WHERE viaje_id = ? ORDER BY orden ASC',
       [id]
     );
 
