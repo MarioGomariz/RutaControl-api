@@ -12,7 +12,7 @@ export async function login(req: Request<{}, {}, LoginBody>, res: Response) {
     if (!usuario || !password) return res.status(400).json({ error: 'Usuario y password requeridos' });
 
     const [rows] = await pool.query(
-      'SELECT * FROM usuarios WHERE usuario = ? LIMIT 1',
+      'SELECT * FROM usuario WHERE usuario = ? LIMIT 1',
       [usuario]
     );
     const user = (rows as Array<Usuario>)?.[0];
@@ -43,7 +43,7 @@ export async function createAdmin(req: Request<{}, {}, CreateAdminBody>, res: Re
 
     const hash = await hashPassword(password);
     const [result] = await pool.query(
-      `INSERT INTO usuarios (usuario, contrasena, rol_id, activo)
+      `INSERT INTO usuario (usuario, contrasena, rol_id, activo)
        VALUES (?, ?, ?, 1, 1)`,
       [usuario, hash]
     );

@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { pool } from '../db/pool.js';
-import type { Servicio } from '../types/servicio.js';
+import { pool } from '../db/pool';
+import type { Servicio } from '../types/servicio';
 
 export async function listarServicios(_req: Request, res: Response) {
   try {
@@ -29,25 +29,18 @@ type CrearServicioBody = Servicio;
 
 export async function crearServicio(req: Request<{}, {}, CrearServicioBody>, res: Response) {
   try {
-    const b = req.body;
-    if (
-      !b.nombre ||
-      typeof b.requierePruebaHidraulica !== 'boolean' ||
-      typeof b.requiereVisuales !== 'boolean' ||
-      typeof b.requiereValvulaYMangueras !== 'boolean'
-    ) return res.status(400).json({ error: 'Campos obligatorios faltantes' });
+    const { nombre, descripcion, requiere_prueba_hidraulica, requiere_visuales, requiere_valvula_y_mangueras } = req.body;
 
     const [r] = await pool.query(
       `INSERT INTO servicios
-      (nombre, descripcion, requierePruebaHidraulica, requiereVisuales, requiereValvulaYMangueras, observaciones)
-      VALUES (?, ?, ?, ?, ?, ?)`,
+      (nombre, descripcion, requiere_prueba_hidraulica, requiere_visuales, requiere_valvula_y_mangueras)
+      VALUES (?, ?, ?, ?, ?)`,
       [
-        b.nombre,
-        b.descripcion ?? null,
-        b.requierePruebaHidraulica ? 1 : 0,
-        b.requiereVisuales ? 1 : 0,
-        b.requiereValvulaYMangueras ? 1 : 0,
-        b.observaciones ?? null
+        nombre,
+        descripcion ?? null,
+        requiere_prueba_hidraulica ? 1 : 0,
+        requiere_visuales ? 1 : 0,
+        requiere_valvula_y_mangueras ? 1 : 0
       ]
     );
     res.status(201).json({ id: (r as any).insertId });
@@ -57,7 +50,7 @@ export async function crearServicio(req: Request<{}, {}, CrearServicioBody>, res
   }
 }
 
-type UpdateServicioBody = Partial<Servicio>;
+type UpdateServicioBody = Partial<Omit<Servicio, 'id'>>;
 
 export async function actualizarServicio(
   req: Request<{ id: string }, {}, UpdateServicioBody>,
@@ -70,19 +63,17 @@ export async function actualizarServicio(
     const [r] = await pool.query(
       `UPDATE servicios SET
         nombre = COALESCE(?, nombre),
-        descripcion = ?,
-        requierePruebaHidraulica = COALESCE(?, requierePruebaHidraulica),
-        requiereVisuales = COALESCE(?, requiereVisuales),
-        requiereValvulaYMangueras = COALESCE(?, requiereValvulaYMangueras),
-        observaciones = ?
+        descripcion = COALESCE(?, descripcion),
+        requiere_prueba_hidraulica = COALESCE(?, requiere_prueba_hidraulica),
+        requiere_visuales = COALESCE(?, requiere_visuales),
+        requiere_valvula_y_mangueras = COALESCE(?, requiere_valvula_y_mangueras)
       WHERE id = ?`,
       [
         b.nombre ?? null,
         b.descripcion ?? null,
-        typeof b.requierePruebaHidraulica === 'boolean' ? (b.requierePruebaHidraulica ? 1 : 0) : null,
-        typeof b.requiereVisuales === 'boolean' ? (b.requiereVisuales ? 1 : 0) : null,
-        typeof b.requiereValvulaYMangueras === 'boolean' ? (b.requiereValvulaYMangueras ? 1 : 0) : null,
-        b.observaciones ?? null,
+        typeof b.requiere_prueba_hidraulica === 'boolean' ? (b.requiere_prueba_hidraulica ? 1 : 0) : null,
+        typeof b.requiere_visuales === 'boolean' ? (b.requiere_visuales ? 1 : 0) : null,
+        typeof b.requiere_valvula_y_mangueras === 'boolean' ? (b.requiere_valvula_y_mangueras ? 1 : 0) : null,
         id
       ]
     );

@@ -2,13 +2,14 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import authRoutes from './routes/auth.routes.js';
-import choferesRoutes from './routes/choferes.routes.js';
-import serviciosRoutes from './routes/servicios.routes.js';
-import tractoresRoutes from './routes/tractores.routes.js';
-import semisRoutes from './routes/semirremolques.routes.js';
-import viajesRoutes from './routes/viajes.routes.js';
-import { pool } from './db/pool.js';
+import authRoutes from './routes/auth.routes';
+import choferesRoutes from './routes/choferes.routes';
+import serviciosRoutes from './routes/servicios.routes';
+import tractoresRoutes from './routes/tractores.routes';
+import semisRoutes from './routes/semirremolques.routes';
+import viajesRoutes from './routes/viajes.routes';
+import usuariosRoutes from './routes/usuarios.routes';
+import { pool } from './db/pool';
 
 const app = express();
 
@@ -33,6 +34,7 @@ app.use('/api/servicios', serviciosRoutes);
 app.use('/api/tractores', tractoresRoutes);
 app.use('/api/semirremolques', semisRoutes);
 app.use('/api/viajes', viajesRoutes);
+app.use('/api/usuarios', usuariosRoutes);
 
 // 404
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));

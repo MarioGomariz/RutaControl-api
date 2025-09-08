@@ -1,20 +1,16 @@
 import { Request, Response } from 'express';
-import { pool } from '../db/pool.js';
-import type { Viaje, ViajeDestino } from '../types/viaje.js';
+import { pool } from '../db/pool';
+import type { Viaje, ViajeDestino } from '../types/viaje';
 
 /** GET /api/viajes */
 export async function listarViajes(_req: Request, res: Response) {
   try {
     const [rows] = await pool.query(
-      `SELECT v.*,
-              c.nombre AS chofer_nombre, c.apellido AS chofer_apellido,
-              t.dominio AS tractor_dominio,
-              srl.dominio AS semi_dominio,
-              sv.nombre AS servicio_nombre
-       FROM viajes v
-       JOIN choferes c ON c.id = v.chofer_id
-       JOIN tractores t ON t.id = v.tractor_id
-       JOIN semirremolques srl ON srl.id = v.semirremolque_id
+      `SELECT v.*, c.*, t.*, srl.*, sv.*
+       FROM viaje v
+       JOIN chofer c ON c.id = v.chofer_id
+       JOIN tractor t ON t.id = v.tractor_id
+       JOIN semirremolque srl ON srl.id = v.semirremolque_id
        JOIN servicios sv ON sv.id = v.servicio_id
        ORDER BY v.id DESC`
     );
@@ -29,11 +25,11 @@ export async function listarViajes(_req: Request, res: Response) {
 export async function obtenerViaje(req: Request<{ id: string }>, res: Response) {
   try {
     const { id } = req.params;
-    const [[viaje]]: any = await pool.query('SELECT * FROM viajes WHERE id = ? LIMIT 1', [id]);
+    const [[viaje]]: any = await pool.query('SELECT * FROM viaje WHERE id = ? LIMIT 1', [id]);
     if (!viaje) return res.status(404).json({ error: 'Viaje no encontrado' });
 
     const [destinos] = await pool.query(
-      'SELECT id, orden, ubicacion FROM viaje_destinos WHERE viaje_id = ? ORDER BY orden ASC',
+      'SELECT id, orden, ubicacion FROM destinos WHERE viaje_id = ? ORDER BY orden ASC',
       [id]
     );
 
@@ -62,7 +58,7 @@ export async function crearViaje(
   }
   if (!['nacional','internacional'].includes(body.alcance))
     return res.status(400).json({ error: 'alcance inválido' });
-  if (!['programado','en_curso','finalizado'].includes(body.estado))
+  if (!['programado','en curso','finalizado'].includes(body.estado))
     return res.status(400).json({ error: 'estado inválido' });
 
   const destinos = body.destinos ?? [];
@@ -73,9 +69,9 @@ export async function crearViaje(
 
     // Validar foreign keys existen mínimamente
     const checks = [
-      conn.query('SELECT id FROM choferes WHERE id = ? LIMIT 1', [body.chofer_id]),
-      conn.query('SELECT id FROM tractores WHERE id = ? LIMIT 1', [body.tractor_id]),
-      conn.query('SELECT id FROM semirremolques WHERE id = ? LIMIT 1', [body.semirremolque_id]),
+      conn.query('SELECT id FROM chofer WHERE id = ? LIMIT 1', [body.chofer_id]),
+      conn.query('SELECT id FROM tractor WHERE id = ? LIMIT 1', [body.tractor_id]),
+      conn.query('SELECT id FROM semirremolque WHERE id = ? LIMIT 1', [body.semirremolque_id]),
       conn.query('SELECT id FROM servicios WHERE id = ? LIMIT 1', [body.servicio_id]),
     ];
     const results = await Promise.all(checks);
@@ -84,7 +80,7 @@ export async function crearViaje(
     }
 
     const [r] = await conn.query(
-      `INSERT INTO viajes
+      `INSERT INTO viaje
       (chofer_id, tractor_id, semirremolque_id, servicio_id,
        alcance, origen, cantidad_destinos, fecha_hora_salida, estado)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -102,7 +98,7 @@ export async function crearViaje(
         return res.status(400).json({ error: 'Destino inválido: requiere orden (number) y ubicacion (string)' });
       }
       await conn.query(
-        'INSERT INTO viaje_destinos (viaje_id, orden, ubicacion) VALUES (?, ?, ?)',
+        'INSERT INTO destinos (viaje_id, orden, ubicacion) VALUES (?, ?, ?)',
         [viajeId, d.orden, d.ubicacion]
       );
     }
@@ -133,7 +129,7 @@ export async function actualizarViaje(
 
     // update básico del viaje
     const [r] = await conn.query(
-      `UPDATE viajes SET
+      `UPDATE viaje SET
         chofer_id = COALESCE(?, chofer_id),
         tractor_id = COALESCE(?, tractor_id),
         semirremolque_id = COALESCE(?, semirremolque_id),
@@ -156,18 +152,18 @@ export async function actualizarViaje(
 
     // si vienen destinos -> reemplazar todos
     if (b.destinos) {
-      await conn.query('DELETE FROM viaje_destinos WHERE viaje_id = ?', [id]);
+      await conn.query('DELETE FROM destinos WHERE viaje_id = ?', [id]);
       for (const d of b.destinos) {
         if (typeof d.orden !== 'number' || !d.ubicacion) {
           await conn.rollback();
           return res.status(400).json({ error: 'Destino inválido: requiere orden (number) y ubicacion (string)' });
         }
         await conn.query(
-          'INSERT INTO viaje_destinos (viaje_id, orden, ubicacion) VALUES (?, ?, ?)',
+          'INSERT INTO destinos (viaje_id, orden, ubicacion) VALUES (?, ?, ?)',
           [id, d.orden, d.ubicacion]
         );
       }
-      await conn.query('UPDATE viajes SET cantidad_destinos = ? WHERE id = ?', [b.destinos.length, id]);
+      await conn.query('UPDATE viaje SET cantidad_destinos = ? WHERE id = ?', [b.destinos.length, id]);
     }
 
     await conn.commit();
@@ -185,7 +181,7 @@ export async function actualizarViaje(
 export async function eliminarViaje(req: Request<{ id: string }>, res: Response) {
   try {
     const { id } = req.params;
-    const [r] = await pool.query('DELETE FROM viajes WHERE id = ?', [id]);
+    const [r] = await pool.query('DELETE FROM viaje WHERE id = ?', [id]);
     if ((r as any).affectedRows === 0) return res.status(404).json({ error: 'Viaje no encontrado' });
     res.json({ ok: true });
   } catch (e) {

@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { authRequired } from '../middlewares/auth.middleware.js';
-import { crearChofer, listarChoferes, obtenerChofer } from '../controllers/choferes.controller.js';
+import { authRequired } from '../middlewares/auth.middleware';
+import { crearChofer, listarChoferes, obtenerChofer, actualizarChofer, eliminarChofer } from '../controllers/choferes.controller';
 
 const router = Router();
 
@@ -8,5 +8,7 @@ const router = Router();
 router.get('/', authRequired, listarChoferes);
 router.get('/:id', authRequired, obtenerChofer);
 router.post('/', authRequired, crearChofer);
+router.put('/:id', authRequired, actualizarChofer);
+router.delete('/:id', authRequired, eliminarChofer);
 
 export default router;
