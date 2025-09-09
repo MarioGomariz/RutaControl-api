@@ -3,6 +3,7 @@ import { pool } from "../db/pool";
 import { hashPassword } from "../utils/password";
 import crypto from "crypto";
 import type { Chofer } from "../types/chofer";
+import { toSqlDate } from "../helpers/dateTransforme";
 
 type CrearChoferBody = Chofer;
 
@@ -64,7 +65,7 @@ export async function crearChofer(
         body.telefono,
         body.email,
         body.licencia,
-        body.fecha_vencimiento_licencia,
+        toSqlDate(body.fecha_vencimiento_licencia),
         body.activo ? 1 : 0,
         usuarioId,
       ]
@@ -89,7 +90,19 @@ export async function crearChofer(
 export async function listarChoferes(_req: Request, res: Response) {
   try {
     const [rows] = await pool.query(
-      `SELECT c.*, u.*
+      `SELECT
+         c.id AS id,
+         c.nombre,
+         c.apellido,
+         c.dni,
+         c.telefono,
+         c.email AS email,
+         c.licencia,
+         c.fecha_vencimiento_licencia,
+         c.activo AS activo,
+         c.usuario_id AS usuario_id,
+         u.usuario AS usuario,
+         u.rol_id AS rol_id
        FROM chofer c
        JOIN usuario u ON u.id = c.usuario_id
        ORDER BY c.id DESC`
@@ -108,7 +121,19 @@ export async function obtenerChofer(
   try {
     const { id } = req.params;
     const [rows] = await pool.query(
-      `SELECT c.*, u.*
+      `SELECT
+         c.id AS id,
+         c.nombre,
+         c.apellido,
+         c.dni,
+         c.telefono,
+         c.email AS email,
+         c.licencia,
+         c.fecha_vencimiento_licencia,
+         c.activo AS activo,
+         c.usuario_id AS usuario_id,
+         u.usuario AS usuario,
+         u.rol_id AS rol_id
        FROM chofer c
        JOIN usuario u ON u.id = c.usuario_id
        WHERE c.id = ? LIMIT 1`,
@@ -194,9 +219,23 @@ export async function actualizarChofer(
 
     // Devolver el recurso actualizado
     const [rows] = await conn.query(
-      `SELECT *
+      `SELECT
+         c.id AS chofer_id,
+         c.nombre,
+         c.apellido,
+         c.dni,
+         c.telefono,
+         c.email AS chofer_email,
+         c.licencia,
+         c.fecha_vencimiento_licencia,
+         c.activo AS chofer_activo,
+         c.usuario_id AS chofer_usuario_id,
+         u.id AS usuario_id,
+         u.usuario AS usuario,
+         u.rol_id AS usuario_rol_id,
+         u.activo AS usuario_activo
        FROM chofer c
-       JOIN usuario u ON u.usuario = c.email
+       JOIN usuario u ON u.id = c.usuario_id
        WHERE c.id = ? LIMIT 1`,
       [id]
     );

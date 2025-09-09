@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { pool } from '../db/pool';
+import { toSqlDate } from '../helpers/dateTransforme';
 import type { Semirremolque } from '../types/semirremolque';
 
 export async function listarSemis(_req: Request, res: Response) {
@@ -49,8 +50,8 @@ export async function crearSemi(req: Request<{}, {}, CrearSemiBody>, res: Respon
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         b.nombre, b.dominio, b.anio, b.estado, b.tipo_servicio, b.alcance_servicio,
-        b.vencimiento_rto, b.vencimiento_visual_externa, b.vencimiento_visual_interna,
-        b.vencimiento_espesores, b.vencimiento_prueba_hidraulica, b.vencimiento_mangueras, b.vencimiento_valvula_flujo
+        toSqlDate(b.vencimiento_rto), toSqlDate(b.vencimiento_visual_externa), toSqlDate(b.vencimiento_visual_interna),
+        toSqlDate(b.vencimiento_espesores), toSqlDate(b.vencimiento_prueba_hidraulica), toSqlDate(b.vencimiento_mangueras), toSqlDate(b.vencimiento_valvula_flujo)
       ]
     );
     res.status(201).json({ id: (r as any).insertId });
@@ -90,9 +91,9 @@ export async function actualizarSemi(
       [
         b.nombre ?? null, b.dominio ?? null, b.anio ?? null, b.estado ?? null,
         b.tipo_servicio ?? null, b.alcance_servicio ?? null,
-        b.vencimiento_rto ?? null, b.vencimiento_visual_externa ?? null, b.vencimiento_visual_interna ?? null,
-        b.vencimiento_espesores ?? null, b.vencimiento_prueba_hidraulica ?? null, b.vencimiento_mangueras ?? null,
-        b.vencimiento_valvula_flujo ?? null, id
+        toSqlDate(b.vencimiento_rto) ?? null, toSqlDate(b.vencimiento_visual_externa) ?? null, toSqlDate(b.vencimiento_visual_interna) ?? null,
+        toSqlDate(b.vencimiento_espesores) ?? null, toSqlDate(b.vencimiento_prueba_hidraulica) ?? null, toSqlDate(b.vencimiento_mangueras) ?? null,
+        toSqlDate(b.vencimiento_valvula_flujo) ?? null, id
       ]
     );
 

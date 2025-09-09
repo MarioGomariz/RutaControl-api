@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { pool } from '../db/pool';
 import type { Tractor } from '../types/tractor';
+import { toSqlDate } from '../helpers/dateTransforme';
 
 export async function listarTractores(_req: Request, res: Response) {
   try {
@@ -30,11 +31,12 @@ type CrearTractorBody = Tractor;
 export async function crearTractor(req: Request<{}, {}, CrearTractorBody>, res: Response) {
   try {
     const { marca, modelo, dominio, anio, vencimiento_rto, estado, tipo_servicio, alcance_servicio } = req.body;
+    const rtoDate = toSqlDate(vencimiento_rto);
     const [r] = await pool.query(
       `INSERT INTO tractores
       (marca, modelo, dominio, anio, vencimiento_rto, estado, tipo_servicio, alcance_servicio)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [marca, modelo, dominio, anio, vencimiento_rto, estado, tipo_servicio, alcance_servicio]
+      [marca, modelo, dominio, anio, rtoDate, estado, tipo_servicio, alcance_servicio]
     );
     res.status(201).json({ id: (r as any).insertId });
   } catch (e: any) {
@@ -53,6 +55,7 @@ export async function actualizarTractor(
   try {
     const { id } = req.params;
     const b = req.body;
+    const rtoDate = toSqlDate(b.vencimiento_rto);
 
     const [r] = await pool.query(
       `UPDATE tractores SET
@@ -60,14 +63,14 @@ export async function actualizarTractor(
         modelo = COALESCE(?, modelo),
         dominio = COALESCE(?, dominio),
         anio = COALESCE(?, anio),
-        vencimiento_rto = COALESCE(?, vencimiento_rto),
+        vencimiento_rto = COALESCE(?, rtoDate),
         estado = COALESCE(?, estado),
         tipo_servicio = COALESCE(?, tipo_servicio),
         alcance_servicio = COALESCE(?, alcance_servicio)
       WHERE id = ?`,
       [
         b.marca ?? null, b.modelo ?? null, b.dominio ?? null, b.anio ?? null,
-        b.vencimiento_rto ?? null, b.estado ?? null, b.tipo_servicio ?? null,
+        rtoDate ?? null, b.estado ?? null, b.tipo_servicio ?? null,
         b.alcance_servicio ?? null, id
       ]
     );
