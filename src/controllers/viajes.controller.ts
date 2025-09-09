@@ -9,7 +9,7 @@ export async function listarViajes(_req: Request, res: Response) {
       `SELECT v.*, c.*, t.*, srl.*, sv.*
        FROM viaje v
        JOIN chofer c ON c.id = v.chofer_id
-       JOIN tractor t ON t.id = v.tractor_id
+       JOIN tractores t ON t.id = v.tractor_id
        JOIN semirremolque srl ON srl.id = v.semirremolque_id
        JOIN servicios sv ON sv.id = v.servicio_id
        ORDER BY v.id DESC`

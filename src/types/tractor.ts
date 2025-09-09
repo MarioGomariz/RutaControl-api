@@ -1,5 +1,5 @@
 // =========================
-// Tabla: Tractores
+// Tabla: tractores
 // =========================
 
 export type EstadoUnidad = 'disponible' | 'en uso' | 'en reparacion' | 'fuera de servicio';

@@ -4,7 +4,7 @@ import type { Tractor } from '../types/tractor';
 
 export async function listarTractores(_req: Request, res: Response) {
   try {
-    const [rows] = await pool.query('SELECT * FROM tractor ORDER BY id DESC');
+    const [rows] = await pool.query('SELECT * FROM tractores ORDER BY id DESC');
     res.json(rows as Tractor[]);
   } catch (e) {
     console.error(e);
@@ -15,7 +15,7 @@ export async function listarTractores(_req: Request, res: Response) {
 export async function obtenerTractor(req: Request<{ id: string }>, res: Response) {
   try {
     const { id } = req.params;
-    const [rows] = await pool.query('SELECT * FROM tractor WHERE id = ? LIMIT 1', [id]);
+    const [rows] = await pool.query('SELECT * FROM tractores WHERE id = ? LIMIT 1', [id]);
     const row = (rows as any[])[0] as Tractor | undefined;
     if (!row) return res.status(404).json({ error: 'Tractor no encontrado' });
     res.json(row);
@@ -30,9 +30,8 @@ type CrearTractorBody = Tractor;
 export async function crearTractor(req: Request<{}, {}, CrearTractorBody>, res: Response) {
   try {
     const { marca, modelo, dominio, anio, vencimiento_rto, estado, tipo_servicio, alcance_servicio } = req.body;
-    console.log("body", req.body);
     const [r] = await pool.query(
-      `INSERT INTO tractor
+      `INSERT INTO tractores
       (marca, modelo, dominio, anio, vencimiento_rto, estado, tipo_servicio, alcance_servicio)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [marca, modelo, dominio, anio, vencimiento_rto, estado, tipo_servicio, alcance_servicio]
@@ -56,7 +55,7 @@ export async function actualizarTractor(
     const b = req.body;
 
     const [r] = await pool.query(
-      `UPDATE tractor SET
+      `UPDATE tractores SET
         marca = COALESCE(?, marca),
         modelo = COALESCE(?, modelo),
         dominio = COALESCE(?, dominio),
@@ -85,7 +84,7 @@ export async function actualizarTractor(
 export async function eliminarTractor(req: Request<{ id: string }>, res: Response) {
   try {
     const { id } = req.params;
-    const [r] = await pool.query('DELETE FROM tractor WHERE id = ?', [id]);
+    const [r] = await pool.query('DELETE FROM tractores WHERE id = ?', [id]);
     if ((r as any).affectedRows === 0) return res.status(404).json({ error: 'Tractor no encontrado' });
     res.json({ ok: true });
   } catch (e) {
