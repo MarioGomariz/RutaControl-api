@@ -25,14 +25,12 @@ router.post("/login", async (req: Request<{}, {}, LoginBody>, res: Response) => 
        WHERE usuario = ? LIMIT 1`,
       [usuario]
     );
-
     const user = (rows as any[])?.[0];
     if (!user) return res.status(400).json({ error: "Credenciales inválidas" });
     if (!user.activo) return res.status(403).json({ error: "Usuario inactivo" });
 
     const ok = await comparePassword(password, user.contrasena);
     if (!ok) return res.status(400).json({ error: "Credenciales inválidas" });
-
     const token = jwt.sign(
       { id: user.id, usuario: user.usuario, rol_id: user.rol_id },
       process.env.JWT_SECRET!,
@@ -52,21 +50,38 @@ router.get("/me", requireAuth, async (req: AuthRequest, res: Response) => {
     const userId = req.auth!.id;
 
     const [rows] = await pool.query(
-      `SELECT *
-       FROM usuario u
-       LEFT JOIN roles r ON r.id = u.rol_id
-       WHERE u.id = ? LIMIT 1`,
+      `SELECT 
+         id,
+         usuario,
+         rol_id
+       FROM usuario 
+       WHERE id = ? LIMIT 1`,
       [userId]
     );
-
     const u = (rows as any[])?.[0];
     if (!u) return res.status(404).json({ error: "Usuario no encontrado" });
 
+    if(u.rol_id == 2){
+      const [rows] = await pool.query(
+        `SELECT *
+         FROM chofer
+         WHERE email = ? LIMIT 1`,
+        [u.usuario]
+      );
+      const chofer = (rows as any[])?.[0];
+      if (!chofer) return res.status(404).json({ error: "Chofer no encontrado" });
+      return res.json({
+        id: chofer.id,
+        usuario: u.usuario,
+        rol_id: u.rol_id,
+        usuario_id: u.id,
+      });
+    }
+    
     // No devolver campos sensibles
     return res.json({
       id: u.id,
       usuario: u.usuario,
-      email: u.email,
       rol_id: u.rol_id,
     });
   } catch (e) {
