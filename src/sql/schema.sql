@@ -113,9 +113,10 @@ CREATE TABLE IF NOT EXISTS viaje (
   tractor_id INT NOT NULL,
   semirremolque_id INT NOT NULL,
   servicio_id INT NOT NULL,
+  alcance ENUM('nacional','internacional') NOT NULL DEFAULT 'nacional',
   origen VARCHAR(150) NOT NULL,
   cantidad_destinos INT NOT NULL DEFAULT 0,            -- opcional: puede derivarse de Destinos
-  fecha_salida DATETIME NOT NULL,
+  fecha_hora_salida DATETIME NOT NULL,
   estado ENUM('programado','en curso','finalizado') NOT NULL DEFAULT 'programado',
   PRIMARY KEY (id),
   KEY idx_viaje_chofer_id (chofer_id),
@@ -155,6 +156,30 @@ CREATE TABLE IF NOT EXISTS destinos (
     FOREIGN KEY (viaje_id) REFERENCES viaje(id)
     ON UPDATE CASCADE
     ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- =========================
+-- Tabla: Paradas
+-- =========================
+CREATE TABLE IF NOT EXISTS paradas (
+  id INT NOT NULL AUTO_INCREMENT,
+  viaje_id INT NOT NULL,
+  odometro DECIMAL(10,2) NOT NULL,
+  ubicacion VARCHAR(150) NOT NULL,
+  tipo ENUM('inicio','descanso','carga','otro','llegada') NOT NULL,
+  destino_id INT NULL,                                 -- solo para tipo 'llegada'
+  fecha_hora DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_paradas_viaje_id (viaje_id),
+  KEY idx_paradas_destino_id (destino_id),
+  CONSTRAINT fk_paradas_viaje
+    FOREIGN KEY (viaje_id) REFERENCES viaje(id)
+    ON UPDATE CASCADE
+    ON DELETE CASCADE,
+  CONSTRAINT fk_paradas_destino
+    FOREIGN KEY (destino_id) REFERENCES destinos(id)
+    ON UPDATE CASCADE
+    ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 SET FOREIGN_KEY_CHECKS = 1;

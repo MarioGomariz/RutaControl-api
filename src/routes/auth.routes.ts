@@ -36,7 +36,6 @@ router.post("/login", async (req: Request<{}, {}, LoginBody>, res: Response) => 
       process.env.JWT_SECRET!,
       { expiresIn: "7d" }
     );
-
     return res.json({ token });
   } catch (e) {
     console.error(e);

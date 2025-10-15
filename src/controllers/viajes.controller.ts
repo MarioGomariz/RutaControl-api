@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { pool } from "../db/pool";
 import type { Viaje, ViajeDestino } from "../types/viaje";
-import { toSqlDate } from "../helpers/dateTransforme";
+import { toSqlDate, toSqlDateTime } from "../helpers/dateTransforme";
 
 /** GET /api/viajes */
 export async function listarViajes(_req: Request, res: Response) {
@@ -135,7 +135,7 @@ export async function crearViaje(
         body.alcance,
         body.origen,
         destinos.length,
-        toSqlDate(body.fecha_hora_salida),
+        toSqlDateTime(body.fecha_hora_salida),
         body.estado,
       ]
     );
@@ -205,7 +205,7 @@ export async function actualizarViaje(
         b.servicio_id ?? null,
         b.alcance ?? null,
         b.origen ?? null,
-        b.fecha_hora_salida ?? null,
+        b.fecha_hora_salida ? toSqlDateTime(b.fecha_hora_salida) : null,
         b.estado ?? null,
         id,
       ]
