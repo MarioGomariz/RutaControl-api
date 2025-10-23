@@ -10,6 +10,7 @@ import semisRoutes from './routes/semirremolques.routes';
 import viajesRoutes from './routes/viajes.routes';
 import usuariosRoutes from './routes/usuarios.routes';
 import paradasRoutes from './routes/paradas.routes';
+import estadisticasRoutes from './routes/estadisticas.routes';
 import { pool } from './db/pool';
 
 const app = express();
@@ -37,6 +38,7 @@ app.use('/api/semirremolques', semisRoutes);
 app.use('/api/viajes', viajesRoutes);
 app.use('/api/usuarios', usuariosRoutes);
 app.use('/api/paradas', paradasRoutes);
+app.use('/api/estadisticas', estadisticasRoutes);
 
 // 404
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
