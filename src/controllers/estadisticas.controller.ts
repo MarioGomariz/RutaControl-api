@@ -181,6 +181,8 @@ export async function obtenerEstadisticas(
         s.id as servicio_id,
         s.nombre as servicio_nombre,
         COUNT(v.id) as total_viajes,
+        SUM(CASE WHEN v.estado = 'programado' THEN 1 ELSE 0 END) as viajes_programados,
+        SUM(CASE WHEN v.estado = 'en curso' THEN 1 ELSE 0 END) as viajes_en_curso,
         SUM(CASE WHEN v.estado = 'finalizado' THEN 1 ELSE 0 END) as viajes_finalizados
       FROM servicios s
       LEFT JOIN viaje v ON s.id = v.servicio_id ${conditions.length > 0 ? `AND ${conditions.join(" AND ")}` : ""}
@@ -228,6 +230,8 @@ export async function obtenerEstadisticas(
         servicio_id: row.servicio_id,
         servicio_nombre: row.servicio_nombre,
         total_viajes: row.total_viajes || 0,
+        viajes_programados: row.viajes_programados || 0,
+        viajes_en_curso: row.viajes_en_curso || 0,
         viajes_finalizados: row.viajes_finalizados || 0,
       })),
     };
