@@ -1,9 +1,12 @@
 import { Router } from "express";
-import { obtenerEstadisticas } from "../controllers/estadisticas.controller";
+import { obtenerEstadisticas, obtenerViajesDetalladosPorChofer } from "../controllers/estadisticas.controller";
 
 const router = Router();
 
 // GET /api/estadisticas - Obtener estadísticas con filtros opcionales
 router.get("/", obtenerEstadisticas);
+
+// GET /api/estadisticas/chofer/:chofer_id/viajes-detallados - Obtener viajes detallados por chofer
+router.get("/chofer/:chofer_id/viajes-detallados", obtenerViajesDetalladosPorChofer);
 
 export default router;

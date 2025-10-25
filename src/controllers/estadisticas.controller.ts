@@ -242,3 +242,186 @@ export async function obtenerEstadisticas(
     res.status(500).json({ error: "Error al obtener estadísticas" });
   }
 }
+
+/** GET /api/estadisticas/chofer/:chofer_id/viajes-detallados */
+export async function obtenerViajesDetalladosPorChofer(
+  req: Request<{ chofer_id: string }, {}, {}, FiltrosEstadisticas>,
+  res: Response
+) {
+  try {
+    const { chofer_id } = req.params;
+    const { fecha_inicio, fecha_fin } = req.query;
+
+    // Construir condiciones WHERE
+    const conditions: string[] = ["v.chofer_id = ?"];
+    const params: any[] = [chofer_id];
+
+    if (fecha_inicio) {
+      conditions.push("v.fecha_hora_salida >= ?");
+      params.push(fecha_inicio);
+    }
+    if (fecha_fin) {
+      conditions.push("v.fecha_hora_salida <= ?");
+      params.push(fecha_fin);
+    }
+
+    const whereClause = `WHERE ${conditions.join(" AND ")}`;
+
+    // Obtener viajes con información de paradas y tractor
+    const [viajes]: any = await pool.query(
+      `SELECT 
+        v.id as viaje_id,
+        v.fecha_hora_salida,
+        v.origen,
+        v.estado,
+        t.marca as tractor_marca,
+        t.modelo as tractor_modelo,
+        t.dominio as tractor_dominio,
+        (SELECT MIN(odometro) FROM paradas WHERE viaje_id = v.id) as odometro_inicio,
+        (SELECT MAX(odometro) FROM paradas WHERE viaje_id = v.id) as odometro_fin,
+        (SELECT MAX(odometro) - MIN(odometro) FROM paradas WHERE viaje_id = v.id) as km_totales
+      FROM viaje v
+      LEFT JOIN tractores t ON v.tractor_id = t.id
+      ${whereClause}
+      ORDER BY v.fecha_hora_salida DESC`,
+      params
+    );
+
+    // Para cada viaje, generar tramos (origen -> destino1, destino1 -> destino2, etc)
+    const tramosDetallados: any[] = [];
+    
+    for (const viaje of viajes) {
+      // Obtener todos los destinos del viaje ordenados
+      const [destinos]: any = await pool.query(
+        `SELECT ubicacion, orden
+        FROM destinos
+        WHERE viaje_id = ?
+        ORDER BY orden ASC`,
+        [viaje.viaje_id]
+      );
+
+      // Obtener todas las paradas del viaje
+      const [paradas]: any = await pool.query(
+        `SELECT 
+          odometro,
+          fecha_hora,
+          tipo,
+          destino_id
+        FROM paradas
+        WHERE viaje_id = ?
+        ORDER BY fecha_hora ASC`,
+        [viaje.viaje_id]
+      );
+
+      // Si no hay destinos, crear un solo tramo con origen y sin destino
+      if (destinos.length === 0) {
+        const paradaInicio = paradas.find((p: any) => p.tipo === 'inicio');
+        const ultimaParada = paradas[paradas.length - 1];
+        
+        let km_comunes = 0;
+        let km_100x100 = 0;
+
+        for (let i = 0; i < paradas.length - 1; i++) {
+          const paradaActual = paradas[i];
+          const paradaSiguiente = paradas[i + 1];
+          
+          const fecha = new Date(paradaActual.fecha_hora);
+          const diaSemana = fecha.getDay();
+          const hora = fecha.getHours();
+          const minutos = fecha.getMinutes();
+          const totalMinutos = hora * 60 + minutos;
+
+          const kmSegmento = paradaSiguiente.odometro - paradaActual.odometro;
+
+          if ((diaSemana === 6 && totalMinutos > 780) || diaSemana === 0) {
+            km_100x100 += kmSegmento;
+          } else {
+            km_comunes += kmSegmento;
+          }
+        }
+
+        tramosDetallados.push({
+          viaje_id: viaje.viaje_id,
+          fecha_salida: paradaInicio?.fecha_hora || viaje.fecha_hora_salida,
+          origen: viaje.origen,
+          fecha_llegada: ultimaParada?.fecha_hora || null,
+          destino: null,
+          km_comunes: km_comunes,
+          km_100x100: km_100x100,
+          tractor_marca: viaje.tractor_marca,
+          tractor_modelo: viaje.tractor_modelo,
+          tractor_dominio: viaje.tractor_dominio
+        });
+      } else {
+        // Crear tramos: origen -> destino1, destino1 -> destino2, etc
+        const puntos = [viaje.origen, ...destinos.map((d: any) => d.ubicacion)];
+        
+        for (let i = 0; i < puntos.length - 1; i++) {
+          const origenTramo = puntos[i];
+          const destinoTramo = puntos[i + 1];
+          
+          // Encontrar las paradas correspondientes a este tramo
+          let paradaInicio: any;
+          let paradaFin: any;
+          
+          if (i === 0) {
+            // Primer tramo: desde inicio hasta primera llegada
+            paradaInicio = paradas.find((p: any) => p.tipo === 'inicio');
+            paradaFin = paradas.find((p: any) => p.tipo === 'llegada');
+          } else {
+            // Tramos siguientes: desde llegada anterior hasta siguiente llegada
+            const paradasLlegada = paradas.filter((p: any) => p.tipo === 'llegada');
+            paradaInicio = paradasLlegada[i - 1];
+            paradaFin = paradasLlegada[i];
+          }
+
+          // Calcular km del tramo
+          let km_comunes = 0;
+          let km_100x100 = 0;
+
+          if (paradaInicio && paradaFin) {
+            const indexInicio = paradas.findIndex((p: any) => p === paradaInicio);
+            const indexFin = paradas.findIndex((p: any) => p === paradaFin);
+
+            for (let j = indexInicio; j < indexFin; j++) {
+              const paradaActual = paradas[j];
+              const paradaSiguiente = paradas[j + 1];
+              
+              const fecha = new Date(paradaActual.fecha_hora);
+              const diaSemana = fecha.getDay();
+              const hora = fecha.getHours();
+              const minutos = fecha.getMinutes();
+              const totalMinutos = hora * 60 + minutos;
+
+              const kmSegmento = paradaSiguiente.odometro - paradaActual.odometro;
+
+              if ((diaSemana === 6 && totalMinutos > 780) || diaSemana === 0) {
+                km_100x100 += kmSegmento;
+              } else {
+                km_comunes += kmSegmento;
+              }
+            }
+          }
+
+          tramosDetallados.push({
+            viaje_id: viaje.viaje_id,
+            fecha_salida: paradaInicio?.fecha_hora || viaje.fecha_hora_salida,
+            origen: origenTramo,
+            fecha_llegada: paradaFin?.fecha_hora || null,
+            destino: destinoTramo,
+            km_comunes: km_comunes,
+            km_100x100: km_100x100,
+            tractor_marca: viaje.tractor_marca,
+            tractor_modelo: viaje.tractor_modelo,
+            tractor_dominio: viaje.tractor_dominio
+          });
+        }
+      }
+    }
+
+    res.json(tramosDetallados);
+  } catch (error) {
+    console.error("Error al obtener viajes detallados por chofer:", error);
+    res.status(500).json({ error: "Error al obtener viajes detallados" });
+  }
+}
