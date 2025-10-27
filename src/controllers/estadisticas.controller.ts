@@ -147,9 +147,13 @@ export async function obtenerEstadisticas(
         t.dominio as tractor_dominio,
         t.estado,
         MAX(v.fecha_hora_salida) as ultimo_viaje,
-        DATEDIFF(NOW(), MAX(v.fecha_hora_salida)) as dias_inactivo
+        CASE 
+          WHEN MAX(v.fecha_hora_salida) IS NULL THEN 999
+          WHEN MAX(v.fecha_hora_salida) > NOW() THEN 0
+          ELSE DATEDIFF(NOW(), MAX(v.fecha_hora_salida))
+        END as dias_inactivo
       FROM tractores t
-      LEFT JOIN viaje v ON t.id = v.tractor_id
+      LEFT JOIN viaje v ON t.id = v.tractor_id AND v.estado IN ('en curso', 'finalizado')
       GROUP BY t.id, t.marca, t.modelo, t.dominio, t.estado
       ORDER BY dias_inactivo DESC`
     );

@@ -274,9 +274,18 @@ export async function eliminarChofer(
     }
     await conn.commit();
     return res.status(200).json({ eliminado: true });
-  } catch (e) {
+  } catch (e: any) {
     await conn.rollback();
-    console.error(e);
+    console.error('Error al eliminar chofer:', e);
+    
+    // Detectar error de restricción de clave foránea
+    if (e?.code === 'ER_ROW_IS_REFERENCED_2' || e?.errno === 1451) {
+      return res.status(400).json({ 
+        error: 'No se puede eliminar el chofer porque está asignado a uno o más viajes',
+        code: e.code,
+        sqlMessage: e.sqlMessage
+      });
+    }
     return res.status(500).json({ error: "Error al eliminar chofer" });
   } finally {
     conn.release();

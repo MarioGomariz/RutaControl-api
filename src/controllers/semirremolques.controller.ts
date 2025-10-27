@@ -31,14 +31,33 @@ type CrearSemiBody = Semirremolque;
 export async function crearSemi(req: Request<{}, {}, CrearSemiBody>, res: Response) {
   try {
     const b = req.body;
-    const required: Array<keyof CrearSemiBody> = [
-      'nombre','dominio','anio','estado','tipo_servicio','alcance_servicio',
-      'vencimiento_rto','vencimiento_visual_externa','vencimiento_visual_interna',
-      'vencimiento_espesores','vencimiento_prueba_hidraulica','vencimiento_mangueras','vencimiento_valvula_flujo'
+    // Campos básicos siempre requeridos
+    const basicRequired: Array<keyof CrearSemiBody> = [
+      'nombre','dominio','anio','estado','tipo_servicio','alcance_servicio'
     ];
-    for (const k of required) {
+    for (const k of basicRequired) {
       if ((b as any)[k] === undefined || (b as any)[k] === null || (b as any)[k] === '') {
         return res.status(400).json({ error: `Campo obligatorio faltante: ${k}` });
+      }
+    }
+    
+    // Validar campos de documentación según tipo de servicio
+    const tipoServicio = b.tipo_servicio?.toLowerCase();
+    if (tipoServicio === 'gas líquido' || tipoServicio === 'gas licuado') {
+      // Requiere: mangueras, prueba hidráulica, válvula de flujo
+      const gasRequired = ['vencimiento_mangueras', 'vencimiento_prueba_hidraulica', 'vencimiento_valvula_flujo'];
+      for (const k of gasRequired) {
+        if (!(b as any)[k]) {
+          return res.status(400).json({ error: `Campo obligatorio para Gas Líquido: ${k}` });
+        }
+      }
+    } else if (tipoServicio === 'combustible líquido') {
+      // Requiere: RTO, visual externa, visual interna, espesores
+      const combustibleRequired = ['vencimiento_rto', 'vencimiento_visual_externa', 'vencimiento_visual_interna', 'vencimiento_espesores'];
+      for (const k of combustibleRequired) {
+        if (!(b as any)[k]) {
+          return res.status(400).json({ error: `Campo obligatorio para Combustible Líquido: ${k}` });
+        }
       }
     }
 
@@ -112,8 +131,17 @@ export async function eliminarSemi(req: Request<{ id: string }>, res: Response) 
     const [r] = await pool.query('DELETE FROM semirremolque WHERE id = ?', [id]);
     if ((r as any).affectedRows === 0) return res.status(404).json({ error: 'Semirremolque no encontrado' });
     res.json({ ok: true });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Error al eliminar semirremolque' });
+  } catch (e: any) {
+    console.error('Error al eliminar semirremolque:', e);
+    
+    // Detectar error de restricción de clave foránea
+    if (e?.code === 'ER_ROW_IS_REFERENCED_2' || e?.errno === 1451) {
+      return res.status(400).json({ 
+        error: 'No se puede eliminar el semirremolque porque está asignado a uno o más viajes',
+        code: e.code,
+        sqlMessage: e.sqlMessage
+      });
+    }
+    return res.status(500).json({ error: 'Error al eliminar semirremolque' });
   }
 }

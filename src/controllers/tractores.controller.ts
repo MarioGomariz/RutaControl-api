@@ -63,7 +63,7 @@ export async function actualizarTractor(
         modelo = COALESCE(?, modelo),
         dominio = COALESCE(?, dominio),
         anio = COALESCE(?, anio),
-        vencimiento_rto = COALESCE(?, rtoDate),
+        vencimiento_rto = COALESCE(?, vencimiento_rto),
         estado = COALESCE(?, estado),
         tipo_servicio = COALESCE(?, tipo_servicio),
         alcance_servicio = COALESCE(?, alcance_servicio)
@@ -90,8 +90,17 @@ export async function eliminarTractor(req: Request<{ id: string }>, res: Respons
     const [r] = await pool.query('DELETE FROM tractores WHERE id = ?', [id]);
     if ((r as any).affectedRows === 0) return res.status(404).json({ error: 'Tractor no encontrado' });
     res.json({ ok: true });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Error al eliminar tractor' });
+  } catch (e: any) {
+    console.error('Error al eliminar tractor:', e);
+    
+    // Detectar error de restricción de clave foránea
+    if (e?.code === 'ER_ROW_IS_REFERENCED_2' || e?.errno === 1451) {
+      return res.status(400).json({ 
+        error: 'No se puede eliminar el tractor porque está asignado a uno o más viajes',
+        code: e.code,
+        sqlMessage: e.sqlMessage
+      });
+    }
+    return res.status(500).json({ error: 'Error al eliminar tractor' });
   }
 }
