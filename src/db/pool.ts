@@ -9,5 +9,8 @@ export const pool = createPool({
   database: process.env.DATABASE_NAME,
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0
+  queueLimit: 0,
+  ssl: process.env.DATABASE_HOST?.includes('railway') ? {
+    rejectUnauthorized: false
+  } : undefined
 });
