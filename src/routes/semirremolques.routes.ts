@@ -5,8 +5,8 @@ import {
   crearSemi,
   actualizarSemi,
   eliminarSemi
-} from '../controllers/semirremolques.controller';
-import { authRequired } from '../middlewares/auth.middleware';
+} from '../controllers/semirremolques.controller.js';
+import { authRequired } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 

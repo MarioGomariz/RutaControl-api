@@ -1,9 +1,9 @@
 import { Request, Response } from "express";
-import { pool } from "../db/pool";
-import { hashPassword } from "../utils/password";
+import { pool } from "../db/pool.js";
+import { hashPassword } from "../utils/password.js";
 import crypto from "crypto";
-import type { Chofer } from "../types/chofer";
-import { toSqlDate } from "../helpers/dateTransforme";
+import type { Chofer } from "../types/chofer.js";
+import { toSqlDate } from "../helpers/dateTransforme.js";
 
 type CrearChoferBody = Chofer;
 

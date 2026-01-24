@@ -6,8 +6,8 @@ import {
   actualizarViaje,
   eliminarViaje,
   obtenerViajesPorChofer
-} from '../controllers/viajes.controller';
-import { authRequired } from '../middlewares/auth.middleware';
+} from '../controllers/viajes.controller.js';
+import { authRequired } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 

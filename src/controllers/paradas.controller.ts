@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
-import { pool } from "../db/pool";
-import type { Parada, CreateParadaDTO } from "../types/parada";
+import { pool } from "../db/pool.js";
+import type { Parada, CreateParadaDTO } from "../types/parada.js";
 
 /** GET /api/paradas/viaje/:viaje_id - Obtener todas las paradas de un viaje */
 export async function listarParadasPorViaje(

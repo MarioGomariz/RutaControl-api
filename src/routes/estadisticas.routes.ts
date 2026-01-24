@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { obtenerEstadisticas, obtenerViajesDetalladosPorChofer } from "../controllers/estadisticas.controller";
+import { obtenerEstadisticas, obtenerViajesDetalladosPorChofer } from "../controllers/estadisticas.controller.js";
 
 const router = Router();
 

@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
-import { pool } from '../db/pool';
+import { pool } from '../db/pool.js';
 import jwt from 'jsonwebtoken';
-import { comparePassword, hashPassword } from '../utils/password';
-import type { Usuario } from '../types/usuario';
+import { comparePassword, hashPassword } from '../utils/password.js';
+import type { Usuario } from '../types/usuario.js';
 
 type LoginBody = { usuario: string; password: string };
 

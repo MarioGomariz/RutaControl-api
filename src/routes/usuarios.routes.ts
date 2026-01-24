@@ -5,8 +5,8 @@ import {
   crearUsuario,
   actualizarUsuario,
   eliminarUsuario
-} from '../controllers/usuarios.controller';
-import { authRequired } from '../middlewares/auth.middleware';
+} from '../controllers/usuarios.controller.js';
+import { authRequired } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 

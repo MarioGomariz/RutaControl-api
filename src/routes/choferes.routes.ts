@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { authRequired } from '../middlewares/auth.middleware';
-import { crearChofer, listarChoferes, obtenerChofer, actualizarChofer, eliminarChofer } from '../controllers/choferes.controller';
+import { authRequired } from '../middlewares/auth.middleware.js';
+import { crearChofer, listarChoferes, obtenerChofer, actualizarChofer, eliminarChofer } from '../controllers/choferes.controller.js';
 
 const router = Router();
 

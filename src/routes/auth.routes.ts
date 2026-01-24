@@ -1,11 +1,11 @@
 import { Router, Response } from "express";
-import type { AuthRequest } from "../middlewares/auth.middleware";
-import { requireAuth } from "../middlewares/auth.middleware";
-import { pool } from "../db/pool";
+import type { AuthRequest } from "../middlewares/auth.middleware.js";
+import { requireAuth } from "../middlewares/auth.middleware.js";
+import { pool } from "../db/pool.js";
 import jwt from "jsonwebtoken";
 import type { Request } from "express";
-import { comparePassword } from "../utils/password";
-import { createAdmin } from "../controllers/auth.controller";
+import { comparePassword } from "../utils/password.js";
+import { createAdmin } from "../controllers/auth.controller.js";
 
 type LoginBody = { usuario: string; password: string };
 

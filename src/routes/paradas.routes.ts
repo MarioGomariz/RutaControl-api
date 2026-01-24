@@ -4,7 +4,7 @@ import {
   crearParada,
   finalizarViaje,
   exportarParadas,
-} from "../controllers/paradas.controller";
+} from "../controllers/paradas.controller.js";
 
 const router = Router();
 

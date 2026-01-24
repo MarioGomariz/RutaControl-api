@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
-import { pool } from '../db/pool';
-import type { Tractor } from '../types/tractor';
-import { toSqlDate } from '../helpers/dateTransforme';
+import { pool } from '../db/pool.js';
+import type { Tractor } from '../types/tractor.js';
+import { toSqlDate } from '../helpers/dateTransforme.js';
 
 export async function listarTractores(_req: Request, res: Response) {
   try {

@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
-import { pool } from "../db/pool";
-import type { FiltrosEstadisticas, RespuestaEstadisticas } from "../types/estadisticas";
+import { pool } from "../db/pool.js";
+import type { FiltrosEstadisticas, RespuestaEstadisticas } from "../types/estadisticas.js";
 
 /** GET /api/estadisticas */
 export async function obtenerEstadisticas(

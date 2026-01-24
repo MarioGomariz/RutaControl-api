@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
-import { pool } from '../db/pool';
+import { pool } from '../db/pool.js';
 import bcrypt from 'bcrypt';
-import { Usuario } from '../types/usuario';
+import { Usuario } from '../types/usuario.js';
 
 /**
  * Listar todos los usuarios

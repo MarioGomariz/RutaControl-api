@@ -5,8 +5,8 @@ import {
   crearTractor,
   actualizarTractor,
   eliminarTractor
-} from '../controllers/tractores.controller';
-import { authRequired } from '../middlewares/auth.middleware';
+} from '../controllers/tractores.controller.js';
+import { authRequired } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 

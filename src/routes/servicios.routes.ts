@@ -2,8 +2,8 @@ import { Router } from 'express';
 import {
   listarServicios,
   obtenerServicio
-} from '../controllers/servicios.controller';
-import { authRequired } from '../middlewares/auth.middleware';
+} from '../controllers/servicios.controller.js';
+import { authRequired } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 
