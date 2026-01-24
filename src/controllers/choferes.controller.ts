@@ -34,11 +34,27 @@ export async function crearChofer(
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
-    const [[dupC]]: any = await conn.query(
-      "SELECT id FROM chofer WHERE dni = ? OR email = ? LIMIT 1",
-      [body.dni, body.email]
+    
+    // Verificar DNI duplicado
+    const [[dupDni]]: any = await conn.query(
+      "SELECT id FROM chofer WHERE dni = ? LIMIT 1",
+      [body.dni]
     );
-    if (dupC) throw new Error("DNI o email ya existente");
+    if (dupDni) throw new Error("Ya existe un chofer registrado con ese DNI");
+    
+    // Verificar email duplicado
+    const [[dupEmail]]: any = await conn.query(
+      "SELECT id FROM chofer WHERE email = ? LIMIT 1",
+      [body.email]
+    );
+    if (dupEmail) throw new Error("Ya existe un chofer registrado con ese email");
+    
+    // Verificar licencia duplicada
+    const [[dupLicencia]]: any = await conn.query(
+      "SELECT id FROM chofer WHERE licencia = ? LIMIT 1",
+      [body.licencia]
+    );
+    if (dupLicencia) throw new Error("Ya existe un chofer registrado con ese número de licencia");
 
     // Password temporal (en prod: enviar flujo de seteo)
     const temp = crypto.randomUUID().slice(0, 10);
@@ -192,6 +208,40 @@ export async function actualizarChofer(
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
+    
+    // Verificar duplicados si se están actualizando esos campos
+    if (body.dni) {
+      const [[dupDni]]: any = await conn.query(
+        "SELECT id FROM chofer WHERE dni = ? AND id != ? LIMIT 1",
+        [body.dni, id]
+      );
+      if (dupDni) {
+        await conn.rollback();
+        return res.status(400).json({ error: "Ya existe un chofer registrado con ese DNI" });
+      }
+    }
+    
+    if (body.email) {
+      const [[dupEmail]]: any = await conn.query(
+        "SELECT id FROM chofer WHERE email = ? AND id != ? LIMIT 1",
+        [body.email, id]
+      );
+      if (dupEmail) {
+        await conn.rollback();
+        return res.status(400).json({ error: "Ya existe un chofer registrado con ese email" });
+      }
+    }
+    
+    if (body.licencia) {
+      const [[dupLicencia]]: any = await conn.query(
+        "SELECT id FROM chofer WHERE licencia = ? AND id != ? LIMIT 1",
+        [body.licencia, id]
+      );
+      if (dupLicencia) {
+        await conn.rollback();
+        return res.status(400).json({ error: "Ya existe un chofer registrado con ese número de licencia" });
+      }
+    }
 
     // Si cambia el email, mantener en sync el usuario.usuario
     const updatesEmail = Object.prototype.hasOwnProperty.call(body, "email");
