@@ -96,12 +96,28 @@ export async function crearChofer(
     );
 
     await conn.commit();
-    console.log('[CREAR_CHOFER] Chofer creado exitosamente, ID:', (cRes as any).insertId);
-    return res.status(201).json({
-      chofer_id: (cRes as any).insertId,
+    const choferId = (cRes as any).insertId;
+    console.log('[CREAR_CHOFER] Chofer creado exitosamente, ID:', choferId);
+    
+    // Devolver el chofer completo para que el frontend pueda usarlo
+    const choferCompleto = {
+      id: choferId,
+      nombre: body.nombre,
+      apellido: body.apellido,
+      dni: body.dni,
+      telefono: body.telefono,
+      email: body.email,
+      licencia: body.licencia,
+      fecha_vencimiento_licencia: body.fecha_vencimiento_licencia,
+      activo: body.activo,
       usuario_id: usuarioId,
-      password_temporal: temp, // solo dev para testear
-    });
+      usuario: body.email,
+      rol_id: 2,
+      password_temporal: temp // solo dev para testear
+    };
+    
+    console.log('[CREAR_CHOFER] Devolviendo chofer con ID:', choferCompleto.id);
+    return res.status(201).json(choferCompleto);
   } catch (e: any) {
     await conn.rollback();
     console.error('[CREAR_CHOFER] Error al crear chofer:', e);
