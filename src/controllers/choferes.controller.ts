@@ -12,6 +12,7 @@ export async function crearChofer(
   res: Response
 ) {
   const body = req.body;
+  console.log('[CREAR_CHOFER] Iniciando creación de chofer:', body.email);
 
   // Validación mínima
   const required: Array<keyof CrearChoferBody> = [
@@ -25,10 +26,12 @@ export async function crearChofer(
     "activo",
   ];
   for (const k of required) {
-    if (body[k] === undefined || body[k] === null || body[k] === "")
+    if (body[k] === undefined || body[k] === null || body[k] === "") {
+      console.log('[CREAR_CHOFER] Error: Campo faltante:', k);
       return res
         .status(400)
         .json({ error: `Campo obligatorio faltante: ${k}` });
+    }
   }
 
   const conn = await pool.getConnection();
@@ -58,9 +61,13 @@ export async function crearChofer(
 
     // Password temporal (en prod: enviar flujo de seteo)
     const temp = crypto.randomUUID().slice(0, 10);
+    console.log('[CREAR_CHOFER] Password temporal generada:', temp);
+    
     const hash = await hashPassword(temp);
+    console.log('[CREAR_CHOFER] Hash generado, longitud:', hash.length);
 
     // Usuario (rol 2)
+    console.log('[CREAR_CHOFER] Creando usuario con email:', body.email);
     const [uRes] = await conn.query(
       `INSERT INTO usuario (usuario, contrasena, rol_id)
        VALUES (?, ?, ?)`,
@@ -68,6 +75,7 @@ export async function crearChofer(
     );
 
     const usuarioId = (uRes as any).insertId;
+    console.log('[CREAR_CHOFER] Usuario creado con ID:', usuarioId);
 
     // Chofer
     const [cRes] = await conn.query(
@@ -88,6 +96,7 @@ export async function crearChofer(
     );
 
     await conn.commit();
+    console.log('[CREAR_CHOFER] Chofer creado exitosamente, ID:', (cRes as any).insertId);
     return res.status(201).json({
       chofer_id: (cRes as any).insertId,
       usuario_id: usuarioId,
@@ -95,8 +104,8 @@ export async function crearChofer(
     });
   } catch (e: any) {
     await conn.rollback();
+    console.error('[CREAR_CHOFER] Error al crear chofer:', e);
     if (e?.message) return res.status(400).json({ error: e.message });
-    console.error(e);
     return res.status(500).json({ error: "Error al crear chofer" });
   } finally {
     conn.release();
@@ -306,8 +315,12 @@ export async function actualizarPasswordChofer(
 ) {
   const { id } = req.params;
   const { password } = req.body;
+  
+  console.log('[ACTUALIZAR_PASSWORD] Actualizando password para chofer ID:', id);
+  console.log('[ACTUALIZAR_PASSWORD] Longitud de password recibida:', password?.length);
 
   if (!password || password.length < 6) {
+    console.log('[ACTUALIZAR_PASSWORD] Error: Password muy corta o vacía');
     return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
   }
 
@@ -323,23 +336,30 @@ export async function actualizarPasswordChofer(
 
     if (!chofer || !chofer.usuario_id) {
       await conn.rollback();
+      console.log('[ACTUALIZAR_PASSWORD] Error: Chofer no encontrado o sin usuario');
       return res.status(404).json({ error: "Chofer no encontrado o sin usuario asociado" });
     }
+    
+    console.log('[ACTUALIZAR_PASSWORD] Chofer encontrado, usuario_id:', chofer.usuario_id);
 
     // Hashear la nueva contraseña
     const hash = await hashPassword(password);
+    console.log('[ACTUALIZAR_PASSWORD] Hash generado, longitud:', hash.length);
 
     // Actualizar la contraseña del usuario
-    await conn.query(
+    const [result]: any = await conn.query(
       "UPDATE usuario SET contrasena = ? WHERE id = ?",
       [hash, chofer.usuario_id]
     );
+    
+    console.log('[ACTUALIZAR_PASSWORD] Filas afectadas:', result.affectedRows);
 
     await conn.commit();
+    console.log('[ACTUALIZAR_PASSWORD] Contraseña actualizada exitosamente');
     return res.status(200).json({ message: "Contraseña actualizada correctamente" });
   } catch (e) {
     await conn.rollback();
-    console.error('Error al actualizar contraseña del chofer:', e);
+    console.error('[ACTUALIZAR_PASSWORD] Error inesperado:', e);
     return res.status(500).json({ error: "Error al actualizar la contraseña" });
   } finally {
     conn.release();

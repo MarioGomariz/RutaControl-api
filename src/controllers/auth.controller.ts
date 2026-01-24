@@ -9,19 +9,41 @@ type LoginBody = { usuario: string; password: string };
 export async function login(req: Request<{}, {}, LoginBody>, res: Response) {
   try {
     const { usuario, password } = req.body;
-    if (!usuario || !password) return res.status(400).json({ error: 'Usuario y password requeridos' });
+    console.log('[LOGIN] Intento de login para usuario:', usuario);
+    
+    if (!usuario || !password) {
+      console.log('[LOGIN] Error: Faltan credenciales');
+      return res.status(400).json({ error: 'Usuario y password requeridos' });
+    }
 
     const [rows] = await pool.query(
       'SELECT * FROM usuario WHERE usuario = ? LIMIT 1',
       [usuario]
     );
     const user = (rows as Array<Usuario>)?.[0];
-    if (!user) return res.status(400).json({ error: 'Credenciales inválidas' });
-    if (!user.activo) return res.status(403).json({ error: 'Usuario inactivo' });
+    
+    if (!user) {
+      console.log('[LOGIN] Error: Usuario no encontrado:', usuario);
+      return res.status(400).json({ error: 'Credenciales inválidas' });
+    }
+    
+    console.log('[LOGIN] Usuario encontrado, ID:', user.id, 'Activo:', user.activo);
+    
+    if (!user.activo) {
+      console.log('[LOGIN] Error: Usuario inactivo');
+      return res.status(403).json({ error: 'Usuario inactivo' });
+    }
 
+    console.log('[LOGIN] Comparando contraseñas...');
     const ok = await comparePassword(password, user.contrasena);
-    if (!ok) return res.status(400).json({ error: 'Credenciales inválidas' });
+    console.log('[LOGIN] Resultado de comparación:', ok);
+    
+    if (!ok) {
+      console.log('[LOGIN] Error: Contraseña incorrecta');
+      return res.status(400).json({ error: 'Credenciales inválidas' });
+    }
 
+    console.log('[LOGIN] Login exitoso para usuario:', usuario);
     const token = jwt.sign(
       { id: user.id, usuario: user.usuario, rol_id: user.rol_id },
       process.env.JWT_SECRET!,
@@ -29,7 +51,7 @@ export async function login(req: Request<{}, {}, LoginBody>, res: Response) {
     );
     return res.json({ token });
   } catch (e) {
-    console.error(e);
+    console.error('[LOGIN] Error inesperado:', e);
     return res.status(500).json({ error: 'Error al iniciar sesión' });
   }
 }
