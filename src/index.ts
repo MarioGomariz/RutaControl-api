@@ -21,11 +21,30 @@ app.use(express.json());
 
 // Healthcheck + chequeo de DB
 app.get('/health', async (_req, res) => {
+  console.log('[HEALTH] Iniciando healthcheck...');
   try {
+    console.log('[HEALTH] Intentando conectar a la base de datos...');
     const [rows] = await pool.query('SELECT 1 AS ok');
+    console.log('[HEALTH] Conexión exitosa:', rows);
     return res.json({ ok: true, db: (rows as any[])[0] });
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: 'DB fail' });
+  } catch (e: any) {
+    console.error('[HEALTH] Error en healthcheck:', {
+      message: e.message,
+      code: e.code,
+      errno: e.errno,
+      sqlState: e.sqlState,
+      sqlMessage: e.sqlMessage,
+      stack: e.stack
+    });
+    return res.status(500).json({ 
+      ok: false, 
+      error: 'DB fail',
+      details: {
+        message: e.message,
+        code: e.code,
+        errno: e.errno
+      }
+    });
   }
 });
 
