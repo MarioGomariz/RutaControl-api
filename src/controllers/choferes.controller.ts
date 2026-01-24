@@ -300,6 +300,52 @@ export async function actualizarChofer(
   }
 }
 
+export async function actualizarPasswordChofer(
+  req: Request<{ id: string }, {}, { password: string }>,
+  res: Response
+) {
+  const { id } = req.params;
+  const { password } = req.body;
+
+  if (!password || password.length < 6) {
+    return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    // Obtener el usuario_id del chofer
+    const [[chofer]]: any = await conn.query(
+      "SELECT usuario_id FROM chofer WHERE id = ? LIMIT 1",
+      [id]
+    );
+
+    if (!chofer || !chofer.usuario_id) {
+      await conn.rollback();
+      return res.status(404).json({ error: "Chofer no encontrado o sin usuario asociado" });
+    }
+
+    // Hashear la nueva contraseña
+    const hash = await hashPassword(password);
+
+    // Actualizar la contraseña del usuario
+    await conn.query(
+      "UPDATE usuario SET contrasena = ? WHERE id = ?",
+      [hash, chofer.usuario_id]
+    );
+
+    await conn.commit();
+    return res.status(200).json({ message: "Contraseña actualizada correctamente" });
+  } catch (e) {
+    await conn.rollback();
+    console.error('Error al actualizar contraseña del chofer:', e);
+    return res.status(500).json({ error: "Error al actualizar la contraseña" });
+  } finally {
+    conn.release();
+  }
+}
+
 export async function eliminarChofer(
   req: Request<{ id: string }>,
   res: Response
