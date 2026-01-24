@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { pool } from '../db/pool.js';
-import bcrypt from 'bcrypt';
+import { hashPassword } from '../utils/password.js';
 import { Usuario } from '../types/usuario.js';
 
 /**
@@ -71,8 +71,7 @@ export async function crearUsuario(req: Request, res: Response) {
     }
     
     // Hash de la contraseña
-    const salt = await bcrypt.genSalt(10);
-    const hash = await bcrypt.hash(body.contrasena, salt);
+    const hash = await hashPassword(body.contrasena);
     
     // Crear el usuario
     const [result] = await conn.query(
@@ -143,8 +142,7 @@ export async function actualizarUsuario(req: Request, res: Response) {
     }
     
     if (body.contrasena) {
-      const salt = await bcrypt.genSalt(10);
-      const hash = await bcrypt.hash(body.contrasena, salt);
+      const hash = await hashPassword(body.contrasena);
       updateData.contrasena = hash;
       updateParams.push(hash);
     }
