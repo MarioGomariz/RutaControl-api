@@ -193,6 +193,36 @@ export async function actualizarUsuario(req: Request, res: Response) {
 }
 
 /**
+ * Buscar usuarios por nombre de usuario
+ */
+export async function buscarUsuarios(req: Request, res: Response) {
+  try {
+    const { query } = req.query;
+    
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({ error: 'Se requiere un parámetro de búsqueda' });
+    }
+    
+    const searchTerm = `%${query}%`;
+    const [rows] = await pool.query(
+      `SELECT id, usuario, rol_id, activo
+       FROM usuario
+       WHERE usuario LIKE ?
+       ORDER BY usuario ASC`,
+      [searchTerm]
+    );
+    
+    return res.json(rows);
+  } catch (error) {
+    console.error('Error al buscar usuarios:', error);
+    return res.status(500).json({ 
+      error: 'Error interno del servidor al buscar usuarios',
+      details: error instanceof Error ? error.message : 'Error desconocido'
+    });
+  }
+}
+
+/**
  * Eliminar un usuario
  */
 export async function eliminarUsuario(req: Request, res: Response) {
