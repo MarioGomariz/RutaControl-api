@@ -84,6 +84,19 @@ export async function crearParada(
       );
     }
 
+    // Verificar que el odómetro no sea menor que paradas previas
+    const [[maxOdometro]]: any = await conn.query(
+      "SELECT MAX(odometro) as max_odometro FROM paradas WHERE viaje_id = ?",
+      [body.viaje_id]
+    );
+
+    if (maxOdometro?.max_odometro && body.odometro < maxOdometro.max_odometro) {
+      await conn.rollback();
+      return res.status(400).json({
+        error: `El odómetro (${body.odometro} km) no puede ser menor que el odómetro previo (${maxOdometro.max_odometro} km)`,
+      });
+    }
+
     // Si es tipo llegada, verificar que el destino existe
     if (body.tipo === 'llegada' && body.destino_id) {
       const [[destino]]: any = await conn.query(
