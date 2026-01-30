@@ -134,8 +134,7 @@ export async function obtenerEstadisticas(
       FROM chofer c
       LEFT JOIN viaje v ON c.id = v.chofer_id ${conditions.length > 0 ? `AND ${conditions.join(" AND ")}` : ""}
       GROUP BY c.id, c.nombre, c.apellido, c.activo
-      HAVING total_viajes > 0
-      ORDER BY total_viajes DESC`,
+      ORDER BY total_viajes DESC, c.apellido ASC`,
       params
     );
 
