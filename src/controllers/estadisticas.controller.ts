@@ -210,6 +210,7 @@ export async function obtenerEstadisticas(
         chofer_id: row.chofer_id,
         chofer_nombre: row.chofer_nombre,
         chofer_apellido: row.chofer_apellido,
+        chofer_activo: row.chofer_activo === 1,
         total_viajes: row.total_viajes || 0,
         viajes_finalizados: row.viajes_finalizados || 0,
         viajes_en_curso: row.viajes_en_curso || 0,
