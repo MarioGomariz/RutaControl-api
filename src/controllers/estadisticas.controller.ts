@@ -121,6 +121,7 @@ export async function obtenerEstadisticas(
         c.id as chofer_id,
         c.nombre as chofer_nombre,
         c.apellido as chofer_apellido,
+        c.activo as chofer_activo,
         COUNT(v.id) as total_viajes,
         SUM(CASE WHEN v.estado = 'finalizado' THEN 1 ELSE 0 END) as viajes_finalizados,
         SUM(CASE WHEN v.estado = 'en curso' THEN 1 ELSE 0 END) as viajes_en_curso,
@@ -132,8 +133,8 @@ export async function obtenerEstadisticas(
         ), 0) as total_km
       FROM chofer c
       LEFT JOIN viaje v ON c.id = v.chofer_id ${conditions.length > 0 ? `AND ${conditions.join(" AND ")}` : ""}
-      WHERE c.activo = 1
-      GROUP BY c.id, c.nombre, c.apellido
+      GROUP BY c.id, c.nombre, c.apellido, c.activo
+      HAVING total_viajes > 0
       ORDER BY total_viajes DESC`,
       params
     );
