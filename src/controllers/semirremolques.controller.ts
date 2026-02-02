@@ -41,6 +41,17 @@ export async function crearSemi(req: Request<{}, {}, CrearSemiBody>, res: Respon
       }
     }
     
+    // Verificar si ya existe un semirremolque con ese dominio
+    const [[existing]]: any = await pool.query(
+      'SELECT id, nombre FROM semirremolque WHERE dominio = ? LIMIT 1',
+      [b.dominio]
+    );
+    if (existing) {
+      return res.status(400).json({ 
+        error: `Ya existe un semirremolque con el dominio ${b.dominio} (${existing.nombre})` 
+      });
+    }
+    
     // Validar campos de documentación según tipo de servicio
     const tipoServicio = b.tipo_servicio?.toLowerCase();
     if (tipoServicio === 'gas líquido' || tipoServicio === 'gas licuado') {
@@ -75,7 +86,7 @@ export async function crearSemi(req: Request<{}, {}, CrearSemiBody>, res: Respon
     );
     res.status(201).json({ id: (r as any).insertId });
   } catch (e: any) {
-    if (e?.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Dominio ya existe' });
+    if (e?.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Ya existe un semirremolque con ese dominio' });
     console.error(e);
     res.status(500).json({ error: 'Error al crear semirremolque' });
   }
@@ -90,6 +101,19 @@ export async function actualizarSemi(
   try {
     const { id } = req.params;
     const b = req.body;
+    
+    // Si se está actualizando el dominio, verificar duplicados
+    if (b.dominio) {
+      const [[existing]]: any = await pool.query(
+        'SELECT id, nombre FROM semirremolque WHERE dominio = ? AND id != ? LIMIT 1',
+        [b.dominio, id]
+      );
+      if (existing) {
+        return res.status(400).json({ 
+          error: `Ya existe un semirremolque con el dominio ${b.dominio} (${existing.nombre})` 
+        });
+      }
+    }
 
     const [r] = await pool.query(
       `UPDATE semirremolque SET
@@ -119,7 +143,7 @@ export async function actualizarSemi(
     if ((r as any).affectedRows === 0) return res.status(404).json({ error: 'Semirremolque no encontrado' });
     res.json({ ok: true });
   } catch (e: any) {
-    if (e?.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Dominio en uso' });
+    if (e?.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Ya existe un semirremolque con ese dominio' });
     console.error(e);
     res.status(500).json({ error: 'Error al actualizar semirremolque' });
   }

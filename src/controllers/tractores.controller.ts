@@ -31,6 +31,18 @@ type CrearTractorBody = Tractor;
 export async function crearTractor(req: Request<{}, {}, CrearTractorBody>, res: Response) {
   try {
     const { marca, modelo, dominio, anio, vencimiento_rto, estado, tipo_servicio, alcance_servicio } = req.body;
+    
+    // Verificar si ya existe un tractor con ese dominio
+    const [[existing]]: any = await pool.query(
+      'SELECT id, marca, modelo FROM tractores WHERE dominio = ? LIMIT 1',
+      [dominio]
+    );
+    if (existing) {
+      return res.status(400).json({ 
+        error: `Ya existe un tractor con el dominio ${dominio} (${existing.marca} ${existing.modelo})` 
+      });
+    }
+    
     const rtoDate = toSqlDate(vencimiento_rto);
     const [r] = await pool.query(
       `INSERT INTO tractores
@@ -40,7 +52,7 @@ export async function crearTractor(req: Request<{}, {}, CrearTractorBody>, res: 
     );
     res.status(201).json({ id: (r as any).insertId });
   } catch (e: any) {
-    if (e?.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Dominio ya existe' });
+    if (e?.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Ya existe un tractor con ese dominio' });
     console.error(e);
     res.status(500).json({ error: 'Error al crear tractor' });
   }
@@ -55,6 +67,20 @@ export async function actualizarTractor(
   try {
     const { id } = req.params;
     const b = req.body;
+    
+    // Si se está actualizando el dominio, verificar duplicados
+    if (b.dominio) {
+      const [[existing]]: any = await pool.query(
+        'SELECT id, marca, modelo FROM tractores WHERE dominio = ? AND id != ? LIMIT 1',
+        [b.dominio, id]
+      );
+      if (existing) {
+        return res.status(400).json({ 
+          error: `Ya existe un tractor con el dominio ${b.dominio} (${existing.marca} ${existing.modelo})` 
+        });
+      }
+    }
+    
     const rtoDate = toSqlDate(b.vencimiento_rto);
 
     const [r] = await pool.query(
@@ -78,7 +104,7 @@ export async function actualizarTractor(
     if ((r as any).affectedRows === 0) return res.status(404).json({ error: 'Tractor no encontrado' });
     res.json({ ok: true });
   } catch (e: any) {
-    if (e?.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Dominio en uso' });
+    if (e?.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Ya existe un tractor con ese dominio' });
     console.error(e);
     res.status(500).json({ error: 'Error al actualizar tractor' });
   }
