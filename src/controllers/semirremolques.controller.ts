@@ -31,26 +31,34 @@ type CrearSemiBody = Semirremolque;
 export async function crearSemi(req: Request<{}, {}, CrearSemiBody>, res: Response) {
   try {
     const b = req.body;
+    console.log('[CREAR_SEMI] Iniciando creación con dominio:', b.dominio);
+    
     // Campos básicos siempre requeridos
     const basicRequired: Array<keyof CrearSemiBody> = [
       'nombre','dominio','anio','estado','tipo_servicio','alcance_servicio'
     ];
     for (const k of basicRequired) {
       if ((b as any)[k] === undefined || (b as any)[k] === null || (b as any)[k] === '') {
+        console.log('[CREAR_SEMI] ❌ Campo faltante:', k);
         return res.status(400).json({ error: `Campo obligatorio faltante: ${k}` });
       }
     }
     
     // Verificar si ya existe un semirremolque con ese dominio
+    console.log('[CREAR_SEMI] Verificando duplicados para dominio:', b.dominio);
     const [[existing]]: any = await pool.query(
       'SELECT id, nombre FROM semirremolque WHERE dominio = ? LIMIT 1',
       [b.dominio]
     );
+    
     if (existing) {
+      console.log('[CREAR_SEMI] ❌ Duplicado encontrado:', existing);
       return res.status(400).json({ 
         error: `Ya existe un semirremolque con el dominio ${b.dominio} (${existing.nombre})` 
       });
     }
+    
+    console.log('[CREAR_SEMI] ✅ No hay duplicados, procediendo a crear');
     
     // Validar campos de documentación según tipo de servicio
     const tipoServicio = b.tipo_servicio?.toLowerCase();
@@ -84,10 +92,15 @@ export async function crearSemi(req: Request<{}, {}, CrearSemiBody>, res: Respon
         toSqlDate(b.vencimiento_espesores), toSqlDate(b.vencimiento_prueba_hidraulica), toSqlDate(b.vencimiento_mangueras), toSqlDate(b.vencimiento_valvula_flujo)
       ]
     );
-    res.status(201).json({ id: (r as any).insertId });
+    const newId = (r as any).insertId;
+    console.log('[CREAR_SEMI] ✅ Semirremolque creado exitosamente con ID:', newId);
+    res.status(201).json({ id: newId });
   } catch (e: any) {
-    if (e?.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Ya existe un semirremolque con ese dominio' });
-    console.error(e);
+    console.error('[CREAR_SEMI] ❌ Error:', e);
+    if (e?.code === 'ER_DUP_ENTRY') {
+      console.log('[CREAR_SEMI] Error de duplicado en BD');
+      return res.status(400).json({ error: 'Ya existe un semirremolque con ese dominio' });
+    }
     res.status(500).json({ error: 'Error al crear semirremolque' });
   }
 }
@@ -101,18 +114,24 @@ export async function actualizarSemi(
   try {
     const { id } = req.params;
     const b = req.body;
+    console.log('[ACTUALIZAR_SEMI] Iniciando actualización para ID:', id);
+    console.log('[ACTUALIZAR_SEMI] Datos recibidos:', b);
     
     // Si se está actualizando el dominio, verificar duplicados
     if (b.dominio) {
+      console.log('[ACTUALIZAR_SEMI] Verificando duplicados para dominio:', b.dominio);
       const [[existing]]: any = await pool.query(
         'SELECT id, nombre FROM semirremolque WHERE dominio = ? AND id != ? LIMIT 1',
         [b.dominio, id]
       );
+      
       if (existing) {
+        console.log('[ACTUALIZAR_SEMI] ❌ Duplicado encontrado:', existing);
         return res.status(400).json({ 
           error: `Ya existe un semirremolque con el dominio ${b.dominio} (${existing.nombre})` 
         });
       }
+      console.log('[ACTUALIZAR_SEMI] ✅ No hay duplicados');
     }
 
     const [r] = await pool.query(
@@ -140,11 +159,18 @@ export async function actualizarSemi(
       ]
     );
 
-    if ((r as any).affectedRows === 0) return res.status(404).json({ error: 'Semirremolque no encontrado' });
+    if ((r as any).affectedRows === 0) {
+      console.log('[ACTUALIZAR_SEMI] ❌ Semirremolque no encontrado con ID:', id);
+      return res.status(404).json({ error: 'Semirremolque no encontrado' });
+    }
+    console.log('[ACTUALIZAR_SEMI] ✅ Semirremolque actualizado exitosamente');
     res.json({ ok: true });
   } catch (e: any) {
-    if (e?.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Ya existe un semirremolque con ese dominio' });
-    console.error(e);
+    console.error('[ACTUALIZAR_SEMI] ❌ Error:', e);
+    if (e?.code === 'ER_DUP_ENTRY') {
+      console.log('[ACTUALIZAR_SEMI] Error de duplicado en BD');
+      return res.status(400).json({ error: 'Ya existe un semirremolque con ese dominio' });
+    }
     res.status(500).json({ error: 'Error al actualizar semirremolque' });
   }
 }

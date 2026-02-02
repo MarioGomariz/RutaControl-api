@@ -31,17 +31,23 @@ type CrearTractorBody = Tractor;
 export async function crearTractor(req: Request<{}, {}, CrearTractorBody>, res: Response) {
   try {
     const { marca, modelo, dominio, anio, vencimiento_rto, estado, tipo_servicio, alcance_servicio } = req.body;
+    console.log('[CREAR_TRACTOR] Iniciando creación con dominio:', dominio);
     
     // Verificar si ya existe un tractor con ese dominio
+    console.log('[CREAR_TRACTOR] Verificando duplicados para dominio:', dominio);
     const [[existing]]: any = await pool.query(
       'SELECT id, marca, modelo FROM tractores WHERE dominio = ? LIMIT 1',
       [dominio]
     );
+    
     if (existing) {
+      console.log('[CREAR_TRACTOR] ❌ Duplicado encontrado:', existing);
       return res.status(400).json({ 
         error: `Ya existe un tractor con el dominio ${dominio} (${existing.marca} ${existing.modelo})` 
       });
     }
+    
+    console.log('[CREAR_TRACTOR] ✅ No hay duplicados, procediendo a crear');
     
     const rtoDate = toSqlDate(vencimiento_rto);
     const [r] = await pool.query(
@@ -50,10 +56,15 @@ export async function crearTractor(req: Request<{}, {}, CrearTractorBody>, res: 
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [marca, modelo, dominio, anio, rtoDate, estado, tipo_servicio, alcance_servicio]
     );
-    res.status(201).json({ id: (r as any).insertId });
+    const newId = (r as any).insertId;
+    console.log('[CREAR_TRACTOR] ✅ Tractor creado exitosamente con ID:', newId);
+    res.status(201).json({ id: newId });
   } catch (e: any) {
-    if (e?.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Ya existe un tractor con ese dominio' });
-    console.error(e);
+    console.error('[CREAR_TRACTOR] ❌ Error:', e);
+    if (e?.code === 'ER_DUP_ENTRY') {
+      console.log('[CREAR_TRACTOR] Error de duplicado en BD');
+      return res.status(400).json({ error: 'Ya existe un tractor con ese dominio' });
+    }
     res.status(500).json({ error: 'Error al crear tractor' });
   }
 }
@@ -67,18 +78,24 @@ export async function actualizarTractor(
   try {
     const { id } = req.params;
     const b = req.body;
+    console.log('[ACTUALIZAR_TRACTOR] Iniciando actualización para ID:', id);
+    console.log('[ACTUALIZAR_TRACTOR] Datos recibidos:', b);
     
     // Si se está actualizando el dominio, verificar duplicados
     if (b.dominio) {
+      console.log('[ACTUALIZAR_TRACTOR] Verificando duplicados para dominio:', b.dominio);
       const [[existing]]: any = await pool.query(
         'SELECT id, marca, modelo FROM tractores WHERE dominio = ? AND id != ? LIMIT 1',
         [b.dominio, id]
       );
+      
       if (existing) {
+        console.log('[ACTUALIZAR_TRACTOR] ❌ Duplicado encontrado:', existing);
         return res.status(400).json({ 
           error: `Ya existe un tractor con el dominio ${b.dominio} (${existing.marca} ${existing.modelo})` 
         });
       }
+      console.log('[ACTUALIZAR_TRACTOR] ✅ No hay duplicados');
     }
     
     const rtoDate = toSqlDate(b.vencimiento_rto);
@@ -101,11 +118,18 @@ export async function actualizarTractor(
       ]
     );
 
-    if ((r as any).affectedRows === 0) return res.status(404).json({ error: 'Tractor no encontrado' });
+    if ((r as any).affectedRows === 0) {
+      console.log('[ACTUALIZAR_TRACTOR] ❌ Tractor no encontrado con ID:', id);
+      return res.status(404).json({ error: 'Tractor no encontrado' });
+    }
+    console.log('[ACTUALIZAR_TRACTOR] ✅ Tractor actualizado exitosamente');
     res.json({ ok: true });
   } catch (e: any) {
-    if (e?.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'Ya existe un tractor con ese dominio' });
-    console.error(e);
+    console.error('[ACTUALIZAR_TRACTOR] ❌ Error:', e);
+    if (e?.code === 'ER_DUP_ENTRY') {
+      console.log('[ACTUALIZAR_TRACTOR] Error de duplicado en BD');
+      return res.status(400).json({ error: 'Ya existe un tractor con ese dominio' });
+    }
     res.status(500).json({ error: 'Error al actualizar tractor' });
   }
 }
