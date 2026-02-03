@@ -82,6 +82,18 @@ export async function crearParada(
         "UPDATE viaje SET estado = 'en curso' WHERE id = ?",
         [body.viaje_id]
       );
+
+      // Cambiar estado del tractor a 'en uso'
+      const [[viajeData]]: any = await conn.query(
+        "SELECT tractor_id FROM viaje WHERE id = ? LIMIT 1",
+        [body.viaje_id]
+      );
+      if (viajeData?.tractor_id) {
+        await conn.query(
+          "UPDATE tractores SET estado = 'en uso' WHERE id = ?",
+          [viajeData.tractor_id]
+        );
+      }
     }
 
     // Verificar que el odómetro no sea menor que paradas previas
@@ -183,6 +195,18 @@ export async function finalizarViaje(
       "UPDATE viaje SET estado = 'finalizado' WHERE id = ?",
       [viaje_id]
     );
+
+    // Cambiar estado del tractor a 'disponible'
+    const [[viajeData]]: any = await conn.query(
+      "SELECT tractor_id FROM viaje WHERE id = ? LIMIT 1",
+      [viaje_id]
+    );
+    if (viajeData?.tractor_id) {
+      await conn.query(
+        "UPDATE tractores SET estado = 'disponible' WHERE id = ?",
+        [viajeData.tractor_id]
+      );
+    }
 
     await conn.commit();
     res.json({ ok: true, message: "Viaje finalizado exitosamente" });

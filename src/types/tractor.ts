@@ -2,7 +2,7 @@
 // Tabla: tractores
 // =========================
 
-export type EstadoUnidad = 'disponible' | 'en uso' | 'en reparacion' | 'fuera de servicio';
+export type EstadoUnidad = 'disponible' | 'asignado' | 'en uso' | 'en reparacion' | 'fuera de servicio';
 
 export interface Tractor {
   id: number;

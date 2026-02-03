@@ -8,9 +8,14 @@ export async function listarViajes(_req: Request, res: Response) {
   try {
     const [rows] = await pool.query(
       `SELECT 
-         *
-       FROM viaje
-       ORDER BY id DESC`
+         v.*,
+         t.marca as tractor_marca,
+         t.modelo as tractor_modelo,
+         t.dominio as tractor_dominio,
+         t.estado as tractor_estado
+       FROM viaje v
+       LEFT JOIN tractores t ON v.tractor_id = t.id
+       ORDER BY v.id DESC`
     );
     res.json(rows as any[]);
   } catch (e) {
@@ -51,7 +56,16 @@ export async function obtenerViajesPorChofer(
   try {
     const { chofer_id } = req.params;
     const [rows] = await pool.query(
-      "SELECT * FROM viaje WHERE chofer_id = ? ORDER BY fecha_hora_salida DESC",
+      `SELECT 
+         v.*,
+         t.marca as tractor_marca,
+         t.modelo as tractor_modelo,
+         t.dominio as tractor_dominio,
+         t.estado as tractor_estado
+       FROM viaje v
+       LEFT JOIN tractores t ON v.tractor_id = t.id
+       WHERE v.chofer_id = ? 
+       ORDER BY v.fecha_hora_salida DESC`,
       [chofer_id]
     );
     res.json(rows as any[]);
@@ -105,7 +119,7 @@ export async function crearViaje(
       conn.query("SELECT id FROM chofer WHERE id = ? LIMIT 1", [
         body.chofer_id,
       ]),
-      conn.query("SELECT id FROM tractores WHERE id = ? LIMIT 1", [
+      conn.query("SELECT id, estado FROM tractores WHERE id = ? LIMIT 1", [
         body.tractor_id,
       ]),
       conn.query("SELECT id FROM semirremolque WHERE id = ? LIMIT 1", [
@@ -120,6 +134,18 @@ export async function crearViaje(
       throw new Error(
         "Alguna referencia (chofer/tractor/semi/servicio) no existe"
       );
+    }
+
+    // Validar que el tractor no esté en uso, reparación o fuera de servicio
+    const [[tractor]]: any = results[1];
+    const estadosNoPermitidos = ['en uso', 'en reparacion', 'fuera de servicio'];
+    if (estadosNoPermitidos.includes(tractor.estado)) {
+      const estadoMensajes: Record<string, string> = {
+        'en uso': 'El tractor está actualmente en uso en un viaje',
+        'en reparacion': 'El tractor está en reparación',
+        'fuera de servicio': 'El tractor está fuera de servicio'
+      };
+      throw new Error(estadoMensajes[tractor.estado] || 'El tractor no está disponible');
     }
 
     const [r] = await conn.query(
@@ -140,6 +166,12 @@ export async function crearViaje(
       ]
     );
     const viajeId = (r as any).insertId;
+
+    // Cambiar estado del tractor a 'asignado'
+    await conn.query(
+      "UPDATE tractores SET estado = 'asignado' WHERE id = ?",
+      [body.tractor_id]
+    );
 
     // Insertar destinos (si vienen)
     for (const d of destinos) {
@@ -256,15 +288,42 @@ export async function eliminarViaje(
   req: Request<{ id: string }>,
   res: Response
 ) {
+  const { id } = req.params;
+  const conn = await pool.getConnection();
+  
   try {
-    const { id } = req.params;
-    const [r] = await pool.query("DELETE FROM viaje WHERE id = ?", [id]);
-    if ((r as any).affectedRows === 0)
+    await conn.beginTransaction();
+    
+    // Obtener el tractor_id antes de eliminar el viaje
+    const [[viaje]]: any = await conn.query(
+      "SELECT tractor_id FROM viaje WHERE id = ? LIMIT 1",
+      [id]
+    );
+    
+    if (!viaje) {
+      await conn.rollback();
       return res.status(404).json({ error: "Viaje no encontrado" });
+    }
+    
+    // Eliminar el viaje
+    await conn.query("DELETE FROM viaje WHERE id = ?", [id]);
+    
+    // Cambiar estado del tractor a 'disponible'
+    if (viaje.tractor_id) {
+      await conn.query(
+        "UPDATE tractores SET estado = 'disponible' WHERE id = ?",
+        [viaje.tractor_id]
+      );
+    }
+    
+    await conn.commit();
     res.json({ ok: true });
   } catch (e) {
+    await conn.rollback();
     console.error(e);
     res.status(500).json({ error: "Error al eliminar viaje" });
+  } finally {
+    conn.release();
   }
 }
 
