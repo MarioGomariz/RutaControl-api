@@ -154,3 +154,38 @@ export async function eliminarTractor(req: Request<{ id: string }>, res: Respons
     return res.status(500).json({ error: 'Error al eliminar tractor' });
   }
 }
+
+/**
+ * Verifica si un dominio ya existe en la base de datos
+ * Se usa para validación en tiempo real en el formulario
+ */
+export async function verificarDominio(req: Request<{ dominio: string }, {}, {}, { excludeId?: string }>, res: Response) {
+  try {
+    const { dominio } = req.params;
+    const { excludeId } = req.query;
+    
+    let query = 'SELECT id, marca, modelo FROM tractores WHERE dominio = ? LIMIT 1';
+    const params: any[] = [dominio];
+    
+    // Si se proporciona excludeId, excluir ese registro (para modo edición)
+    if (excludeId) {
+      query = 'SELECT id, marca, modelo FROM tractores WHERE dominio = ? AND id != ? LIMIT 1';
+      params.push(excludeId);
+    }
+    
+    const [[existing]]: any = await pool.query(query, params);
+    
+    if (existing) {
+      return res.json({ 
+        exists: true, 
+        id: existing.id,
+        info: `${existing.marca} ${existing.modelo}`
+      });
+    }
+    
+    res.json({ exists: false });
+  } catch (e) {
+    console.error('Error al verificar dominio:', e);
+    res.status(500).json({ error: 'Error al verificar dominio' });
+  }
+}

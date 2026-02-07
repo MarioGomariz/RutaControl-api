@@ -195,3 +195,38 @@ export async function eliminarSemi(req: Request<{ id: string }>, res: Response) 
     return res.status(500).json({ error: 'Error al eliminar semirremolque' });
   }
 }
+
+/**
+ * Verifica si un dominio ya existe en la base de datos
+ * Se usa para validación en tiempo real en el formulario
+ */
+export async function verificarDominioSemi(req: Request<{ dominio: string }, {}, {}, { excludeId?: string }>, res: Response) {
+  try {
+    const { dominio } = req.params;
+    const { excludeId } = req.query;
+    
+    let query = 'SELECT id, nombre FROM semirremolque WHERE dominio = ? LIMIT 1';
+    const params: any[] = [dominio];
+    
+    // Si se proporciona excludeId, excluir ese registro (para modo edición)
+    if (excludeId) {
+      query = 'SELECT id, nombre FROM semirremolque WHERE dominio = ? AND id != ? LIMIT 1';
+      params.push(excludeId);
+    }
+    
+    const [[existing]]: any = await pool.query(query, params);
+    
+    if (existing) {
+      return res.json({ 
+        exists: true, 
+        id: existing.id,
+        info: existing.nombre
+      });
+    }
+    
+    res.json({ exists: false });
+  } catch (e) {
+    console.error('Error al verificar dominio:', e);
+    res.status(500).json({ error: 'Error al verificar dominio' });
+  }
+}
