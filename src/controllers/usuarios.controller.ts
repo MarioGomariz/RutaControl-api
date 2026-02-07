@@ -4,13 +4,14 @@ import { hashPassword } from '../utils/password.js';
 import { Usuario } from '../types/usuario.js';
 
 /**
- * Listar todos los usuarios
+ * Listar todos los usuarios (excluye choferes - rol_id = 2)
  */
 export async function listarUsuarios(_req: Request, res: Response) {
   try {
     const [rows] = await pool.query(
       `SELECT *
        FROM usuario
+       WHERE rol_id != 2
        ORDER BY id DESC`
     );
     return res.json(rows);
