@@ -96,7 +96,7 @@ export async function crearParada(
       }
       if (viajeData?.semirremolque_id) {
         await conn.query(
-          "UPDATE semirremolques SET estado = 'en viaje' WHERE id = ?",
+          "UPDATE semirremolque SET estado = 'en viaje' WHERE id = ?",
           [viajeData.semirremolque_id]
         );
       }
@@ -215,7 +215,7 @@ export async function finalizarViaje(
     }
     if (viajeData?.semirremolque_id) {
       await conn.query(
-        "UPDATE semirremolques SET estado = 'disponible' WHERE id = ?",
+        "UPDATE semirremolque SET estado = 'disponible' WHERE id = ?",
         [viajeData.semirremolque_id]
       );
     }

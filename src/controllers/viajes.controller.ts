@@ -173,7 +173,7 @@ export async function crearViaje(
         [body.tractor_id]
       );
       await conn.query(
-        "UPDATE semirremolques SET estado = 'en viaje' WHERE id = ?",
+        "UPDATE semirremolque SET estado = 'en viaje' WHERE id = ?",
         [body.semirremolque_id]
       );
     }
@@ -278,7 +278,7 @@ export async function actualizarViaje(
         [tractorId]
       );
       await conn.query(
-        "UPDATE semirremolques SET estado = 'en viaje' WHERE id = ?",
+        "UPDATE semirremolque SET estado = 'en viaje' WHERE id = ?",
         [semirremolqueId]
       );
     }
@@ -290,7 +290,7 @@ export async function actualizarViaje(
         [tractorId]
       );
       await conn.query(
-        "UPDATE semirremolques SET estado = 'disponible' WHERE id = ?",
+        "UPDATE semirremolque SET estado = 'disponible' WHERE id = ?",
         [semirremolqueId]
       );
     }
@@ -365,7 +365,7 @@ export async function eliminarViaje(
       }
       if (viaje.semirremolque_id) {
         await conn.query(
-          "UPDATE semirremolques SET estado = 'disponible' WHERE id = ?",
+          "UPDATE semirremolque SET estado = 'disponible' WHERE id = ?",
           [viaje.semirremolque_id]
         );
       }
