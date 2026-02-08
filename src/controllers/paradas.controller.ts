@@ -83,15 +83,21 @@ export async function crearParada(
         [body.viaje_id]
       );
 
-      // Cambiar estado del tractor a 'en uso'
+      // Cambiar estado del tractor y semirremolque a 'en viaje'
       const [[viajeData]]: any = await conn.query(
-        "SELECT tractor_id FROM viaje WHERE id = ? LIMIT 1",
+        "SELECT tractor_id, semirremolque_id FROM viaje WHERE id = ? LIMIT 1",
         [body.viaje_id]
       );
       if (viajeData?.tractor_id) {
         await conn.query(
-          "UPDATE tractores SET estado = 'en uso' WHERE id = ?",
+          "UPDATE tractores SET estado = 'en viaje' WHERE id = ?",
           [viajeData.tractor_id]
+        );
+      }
+      if (viajeData?.semirremolque_id) {
+        await conn.query(
+          "UPDATE semirremolques SET estado = 'en viaje' WHERE id = ?",
+          [viajeData.semirremolque_id]
         );
       }
     }
@@ -196,15 +202,21 @@ export async function finalizarViaje(
       [viaje_id]
     );
 
-    // Cambiar estado del tractor a 'disponible'
+    // Cambiar estado del tractor y semirremolque a 'disponible'
     const [[viajeData]]: any = await conn.query(
-      "SELECT tractor_id FROM viaje WHERE id = ? LIMIT 1",
+      "SELECT tractor_id, semirremolque_id FROM viaje WHERE id = ? LIMIT 1",
       [viaje_id]
     );
     if (viajeData?.tractor_id) {
       await conn.query(
         "UPDATE tractores SET estado = 'disponible' WHERE id = ?",
         [viajeData.tractor_id]
+      );
+    }
+    if (viajeData?.semirremolque_id) {
+      await conn.query(
+        "UPDATE semirremolques SET estado = 'disponible' WHERE id = ?",
+        [viajeData.semirremolque_id]
       );
     }
 

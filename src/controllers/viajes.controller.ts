@@ -138,10 +138,9 @@ export async function crearViaje(
 
     // Validar que el tractor no esté en uso, reparación o fuera de servicio
     const [[tractor]]: any = results[1];
-    const estadosNoPermitidos = ['en uso', 'en reparacion', 'fuera de servicio'];
+    const estadosNoPermitidos = ['en reparacion', 'fuera de servicio'];
     if (estadosNoPermitidos.includes(tractor.estado)) {
       const estadoMensajes: Record<string, string> = {
-        'en uso': 'El tractor está actualmente en uso en un viaje',
         'en reparacion': 'El tractor está en reparación',
         'fuera de servicio': 'El tractor está fuera de servicio'
       };
@@ -167,11 +166,17 @@ export async function crearViaje(
     );
     const viajeId = (r as any).insertId;
 
-    // Cambiar estado del tractor a 'asignado'
-    await conn.query(
-      "UPDATE tractores SET estado = 'asignado' WHERE id = ?",
-      [body.tractor_id]
-    );
+    // Si el viaje se crea en estado 'en curso', actualizar estados de unidades
+    if (body.estado === 'en curso') {
+      await conn.query(
+        "UPDATE tractores SET estado = 'en viaje' WHERE id = ?",
+        [body.tractor_id]
+      );
+      await conn.query(
+        "UPDATE semirremolques SET estado = 'en viaje' WHERE id = ?",
+        [body.semirremolque_id]
+      );
+    }
 
     // Insertar destinos (si vienen)
     for (const d of destinos) {
@@ -218,6 +223,20 @@ export async function actualizarViaje(
   try {
     await conn.beginTransaction();
 
+    // Obtener el estado actual del viaje y las unidades asignadas
+    const [[viajeActual]]: any = await conn.query(
+      "SELECT estado, tractor_id, semirremolque_id FROM viaje WHERE id = ? LIMIT 1",
+      [id]
+    );
+
+    if (!viajeActual) {
+      await conn.rollback();
+      return res.status(404).json({ error: "Viaje no encontrado" });
+    }
+
+    const estadoAnterior = viajeActual.estado;
+    const nuevoEstado = b.estado ?? estadoAnterior;
+
     // update básico del viaje
     const [r] = await conn.query(
       `UPDATE viaje SET
@@ -246,6 +265,34 @@ export async function actualizarViaje(
     if ((r as any).affectedRows === 0) {
       await conn.rollback();
       return res.status(404).json({ error: "Viaje no encontrado" });
+    }
+
+    // Actualizar estados de unidades según cambio de estado del viaje
+    const tractorId = b.tractor_id ?? viajeActual.tractor_id;
+    const semirremolqueId = b.semirremolque_id ?? viajeActual.semirremolque_id;
+
+    // Si el viaje pasa de 'programado' a 'en curso'
+    if (estadoAnterior === 'programado' && nuevoEstado === 'en curso') {
+      await conn.query(
+        "UPDATE tractores SET estado = 'en viaje' WHERE id = ?",
+        [tractorId]
+      );
+      await conn.query(
+        "UPDATE semirremolques SET estado = 'en viaje' WHERE id = ?",
+        [semirremolqueId]
+      );
+    }
+
+    // Si el viaje pasa a 'finalizado'
+    if (nuevoEstado === 'finalizado' && estadoAnterior !== 'finalizado') {
+      await conn.query(
+        "UPDATE tractores SET estado = 'disponible' WHERE id = ?",
+        [tractorId]
+      );
+      await conn.query(
+        "UPDATE semirremolques SET estado = 'disponible' WHERE id = ?",
+        [semirremolqueId]
+      );
     }
 
     // si vienen destinos -> reemplazar todos
@@ -294,9 +341,9 @@ export async function eliminarViaje(
   try {
     await conn.beginTransaction();
     
-    // Obtener el tractor_id antes de eliminar el viaje
+    // Obtener las unidades asignadas antes de eliminar el viaje
     const [[viaje]]: any = await conn.query(
-      "SELECT tractor_id FROM viaje WHERE id = ? LIMIT 1",
+      "SELECT tractor_id, semirremolque_id, estado FROM viaje WHERE id = ? LIMIT 1",
       [id]
     );
     
@@ -308,12 +355,20 @@ export async function eliminarViaje(
     // Eliminar el viaje
     await conn.query("DELETE FROM viaje WHERE id = ?", [id]);
     
-    // Cambiar estado del tractor a 'disponible'
-    if (viaje.tractor_id) {
-      await conn.query(
-        "UPDATE tractores SET estado = 'disponible' WHERE id = ?",
-        [viaje.tractor_id]
-      );
+    // Cambiar estado de las unidades a 'disponible' solo si el viaje no estaba finalizado
+    if (viaje.estado !== 'finalizado') {
+      if (viaje.tractor_id) {
+        await conn.query(
+          "UPDATE tractores SET estado = 'disponible' WHERE id = ?",
+          [viaje.tractor_id]
+        );
+      }
+      if (viaje.semirremolque_id) {
+        await conn.query(
+          "UPDATE semirremolques SET estado = 'disponible' WHERE id = ?",
+          [viaje.semirremolque_id]
+        );
+      }
     }
     
     await conn.commit();
