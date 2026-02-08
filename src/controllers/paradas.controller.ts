@@ -167,9 +167,9 @@ export async function finalizarViaje(
   try {
     await conn.beginTransaction();
 
-    // Obtener el viaje y sus destinos
+    // Obtener el viaje con todos los datos necesarios
     const [[viaje]]: any = await conn.query(
-      "SELECT id, cantidad_destinos, estado FROM viaje WHERE id = ? LIMIT 1",
+      "SELECT id, cantidad_destinos, estado, tractor_id, semirremolque_id FROM viaje WHERE id = ? LIMIT 1",
       [viaje_id]
     );
 
@@ -203,20 +203,16 @@ export async function finalizarViaje(
     );
 
     // Cambiar estado del tractor y semirremolque a 'disponible'
-    const [[viajeData]]: any = await conn.query(
-      "SELECT tractor_id, semirremolque_id FROM viaje WHERE id = ? LIMIT 1",
-      [viaje_id]
-    );
-    if (viajeData?.tractor_id) {
+    if (viaje.tractor_id) {
       await conn.query(
         "UPDATE tractores SET estado = 'disponible' WHERE id = ?",
-        [viajeData.tractor_id]
+        [viaje.tractor_id]
       );
     }
-    if (viajeData?.semirremolque_id) {
+    if (viaje.semirremolque_id) {
       await conn.query(
         "UPDATE semirremolque SET estado = 'disponible' WHERE id = ?",
-        [viajeData.semirremolque_id]
+        [viaje.semirremolque_id]
       );
     }
 
