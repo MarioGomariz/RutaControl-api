@@ -120,15 +120,15 @@ export async function crearViaje(
   try {
     await conn.beginTransaction();
 
-    // Validar foreign keys existen mínimamente
+    // Validar foreign keys existen y obtener datos completos para validar vencimientos
     const checks = [
-      conn.query("SELECT id FROM chofer WHERE id = ? LIMIT 1", [
+      conn.query("SELECT id, fecha_vencimiento_licencia, activo FROM chofer WHERE id = ? LIMIT 1", [
         body.chofer_id,
       ]),
-      conn.query("SELECT id, estado FROM tractores WHERE id = ? LIMIT 1", [
+      conn.query("SELECT id, estado, vencimiento_rto FROM tractores WHERE id = ? LIMIT 1", [
         body.tractor_id,
       ]),
-      conn.query("SELECT id FROM semirremolque WHERE id = ? LIMIT 1", [
+      conn.query("SELECT id, estado, tipo_servicio, vencimiento_rto, vencimiento_visual_externa, vencimiento_visual_interna, vencimiento_espesores, vencimiento_prueba_hidraulica, vencimiento_mangueras, vencimiento_valvula_flujo FROM semirremolque WHERE id = ? LIMIT 1", [
         body.semirremolque_id,
       ]),
       conn.query("SELECT id FROM servicios WHERE id = ? LIMIT 1", [
@@ -142,7 +142,19 @@ export async function crearViaje(
       );
     }
 
-    // Validar que el tractor no esté en uso, reparación o fuera de servicio
+    // Validar chofer
+    const [[chofer]]: any = results[0];
+    if (!chofer.activo) {
+      throw new Error('El chofer no está activo');
+    }
+    if (chofer.fecha_vencimiento_licencia) {
+      const vencimiento = new Date(chofer.fecha_vencimiento_licencia);
+      if (vencimiento < new Date()) {
+        throw new Error('El chofer tiene la licencia vencida');
+      }
+    }
+
+    // Validar tractor
     const [[tractor]]: any = results[1];
     const estadosNoPermitidos = ['en reparacion', 'fuera de servicio'];
     if (estadosNoPermitidos.includes(tractor.estado)) {
@@ -151,6 +163,50 @@ export async function crearViaje(
         'fuera de servicio': 'El tractor está fuera de servicio'
       };
       throw new Error(estadoMensajes[tractor.estado] || 'El tractor no está disponible');
+    }
+    if (tractor.vencimiento_rto) {
+      const vencimiento = new Date(tractor.vencimiento_rto);
+      if (vencimiento < new Date()) {
+        throw new Error('El tractor tiene el RTO vencido');
+      }
+    }
+
+    // Validar semirremolque
+    const [[semirremolque]]: any = results[2];
+    if (estadosNoPermitidos.includes(semirremolque.estado)) {
+      const estadoMensajes: Record<string, string> = {
+        'en reparacion': 'El semirremolque está en reparación',
+        'fuera de servicio': 'El semirremolque está fuera de servicio'
+      };
+      throw new Error(estadoMensajes[semirremolque.estado] || 'El semirremolque no está disponible');
+    }
+    
+    // Validar vencimientos del semirremolque según tipo de servicio
+    if (semirremolque.tipo_servicio) {
+      const camposRequeridos: Record<string, string[]> = {
+        'gas líquido': ['vencimiento_mangueras', 'vencimiento_prueba_hidraulica', 'vencimiento_valvula_flujo'],
+        'combustible líquido': ['vencimiento_rto', 'vencimiento_visual_externa', 'vencimiento_visual_interna', 'vencimiento_espesores']
+      };
+      
+      const campos = camposRequeridos[semirremolque.tipo_servicio.toLowerCase()] || [];
+      const etiquetas: Record<string, string> = {
+        'vencimiento_rto': 'RTO',
+        'vencimiento_visual_externa': 'Visual Externa',
+        'vencimiento_visual_interna': 'Visual Interna',
+        'vencimiento_espesores': 'Espesores',
+        'vencimiento_prueba_hidraulica': 'Prueba Hidráulica',
+        'vencimiento_mangueras': 'Mangueras',
+        'vencimiento_valvula_flujo': 'Válvula de Flujo'
+      };
+      
+      for (const campo of campos) {
+        if (semirremolque[campo]) {
+          const vencimiento = new Date(semirremolque[campo]);
+          if (vencimiento < new Date()) {
+            throw new Error(`El semirremolque tiene ${etiquetas[campo] || campo} vencido`);
+          }
+        }
+      }
     }
 
     const [r] = await conn.query(
