@@ -123,8 +123,9 @@ export async function obtenerEstadisticas(
         c.apellido as chofer_apellido,
         c.activo as chofer_activo,
         COUNT(v.id) as total_viajes,
-        SUM(CASE WHEN v.estado = 'finalizado' THEN 1 ELSE 0 END) as viajes_finalizados,
+        SUM(CASE WHEN v.estado = 'programado' THEN 1 ELSE 0 END) as viajes_programados,
         SUM(CASE WHEN v.estado = 'en curso' THEN 1 ELSE 0 END) as viajes_en_curso,
+        SUM(CASE WHEN v.estado = 'finalizado' THEN 1 ELSE 0 END) as viajes_finalizados,
         COALESCE(SUM(
           (SELECT MAX(odometro) - MIN(odometro) 
            FROM paradas 
@@ -211,8 +212,9 @@ export async function obtenerEstadisticas(
         chofer_apellido: row.chofer_apellido,
         chofer_activo: row.chofer_activo === 1,
         total_viajes: row.total_viajes || 0,
-        viajes_finalizados: row.viajes_finalizados || 0,
+        viajes_programados: row.viajes_programados || 0,
         viajes_en_curso: row.viajes_en_curso || 0,
+        viajes_finalizados: row.viajes_finalizados || 0,
         total_km: parseFloat(row.total_km) || 0,
       })),
       inactividad_vehiculos: inactividadVehiculos.map((row: any) => ({
