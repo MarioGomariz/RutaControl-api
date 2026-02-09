@@ -205,12 +205,16 @@ export async function verificarDominioSemi(req: Request<{ dominio: string }, {},
     const { dominio } = req.params;
     const { excludeId } = req.query;
     
-    let query = 'SELECT id, nombre FROM semirremolque WHERE dominio = ? LIMIT 1';
-    const params: any[] = [dominio];
+    // Normalizar dominio: eliminar espacios y convertir a mayúsculas
+    const dominioNormalizado = dominio.replace(/\s+/g, '').toUpperCase();
+    
+    // Buscar usando REPLACE para normalizar los dominios en la BD también
+    let query = 'SELECT id, nombre, dominio FROM semirremolque WHERE REPLACE(UPPER(dominio), " ", "") = ? LIMIT 1';
+    const params: any[] = [dominioNormalizado];
     
     // Si se proporciona excludeId, excluir ese registro (para modo edición)
     if (excludeId) {
-      query = 'SELECT id, nombre FROM semirremolque WHERE dominio = ? AND id != ? LIMIT 1';
+      query = 'SELECT id, nombre, dominio FROM semirremolque WHERE REPLACE(UPPER(dominio), " ", "") = ? AND id != ? LIMIT 1';
       params.push(excludeId);
     }
     
