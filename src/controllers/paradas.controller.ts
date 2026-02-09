@@ -83,9 +83,9 @@ export async function crearParada(
         [body.viaje_id]
       );
 
-      // Cambiar estado del tractor y semirremolque a 'en viaje'
+      // Cambiar estado del tractor, semirremolque y chofer a 'en viaje'
       const [[viajeData]]: any = await conn.query(
-        "SELECT tractor_id, semirremolque_id FROM viaje WHERE id = ? LIMIT 1",
+        "SELECT tractor_id, semirremolque_id, chofer_id FROM viaje WHERE id = ? LIMIT 1",
         [body.viaje_id]
       );
       if (viajeData?.tractor_id) {
@@ -98,6 +98,12 @@ export async function crearParada(
         await conn.query(
           "UPDATE semirremolque SET estado = 'en viaje' WHERE id = ?",
           [viajeData.semirremolque_id]
+        );
+      }
+      if (viajeData?.chofer_id) {
+        await conn.query(
+          "UPDATE chofer SET estado = 'en viaje' WHERE id = ?",
+          [viajeData.chofer_id]
         );
       }
     }
@@ -169,7 +175,7 @@ export async function finalizarViaje(
 
     // Obtener el viaje con todos los datos necesarios
     const [[viaje]]: any = await conn.query(
-      "SELECT id, cantidad_destinos, estado, tractor_id, semirremolque_id FROM viaje WHERE id = ? LIMIT 1",
+      "SELECT id, cantidad_destinos, estado, tractor_id, semirremolque_id, chofer_id FROM viaje WHERE id = ? LIMIT 1",
       [viaje_id]
     );
 
@@ -202,7 +208,7 @@ export async function finalizarViaje(
       [viaje_id]
     );
 
-    // Cambiar estado del tractor y semirremolque a 'disponible'
+    // Cambiar estado del tractor, semirremolque y chofer a 'disponible'
     if (viaje.tractor_id) {
       await conn.query(
         "UPDATE tractores SET estado = 'disponible' WHERE id = ?",
@@ -213,6 +219,12 @@ export async function finalizarViaje(
       await conn.query(
         "UPDATE semirremolque SET estado = 'disponible' WHERE id = ?",
         [viaje.semirremolque_id]
+      );
+    }
+    if (viaje.chofer_id) {
+      await conn.query(
+        "UPDATE chofer SET estado = 'disponible' WHERE id = ?",
+        [viaje.chofer_id]
       );
     }
 

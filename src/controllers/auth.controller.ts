@@ -34,6 +34,19 @@ export async function login(req: Request<{}, {}, LoginBody>, res: Response) {
       return res.status(403).json({ error: 'Usuario inactivo' });
     }
 
+    // Si es chofer (rol_id = 2), verificar estado
+    if (user.rol_id === 2) {
+      const [[chofer]]: any = await pool.query(
+        'SELECT estado FROM chofer WHERE usuario_id = ? LIMIT 1',
+        [user.id]
+      );
+      
+      if (chofer && chofer.estado === 'inactivo') {
+        console.log('[LOGIN] Error: Chofer inactivo');
+        return res.status(403).json({ error: 'Chofer inactivo. No puede iniciar sesión.' });
+      }
+    }
+
     console.log('[LOGIN] Comparando contraseñas...');
     const ok = await comparePassword(password, user.contrasena);
     console.log('[LOGIN] Resultado de comparación:', ok);

@@ -77,11 +77,12 @@ export async function crearChofer(
     const usuarioId = (uRes as any).insertId;
     console.log('[CREAR_CHOFER] Usuario creado con ID:', usuarioId);
 
-    // Chofer
+    // Chofer - estado inicial basado en activo
+    const estadoInicial = body.activo ? 'disponible' : 'inactivo';
     const [cRes] = await conn.query(
       `INSERT INTO chofer
-      (nombre, apellido, dni, telefono, email, licencia, fecha_vencimiento_licencia, activo, usuario_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (nombre, apellido, dni, telefono, email, licencia, fecha_vencimiento_licencia, activo, estado, usuario_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         body.nombre,
         body.apellido,
@@ -91,6 +92,7 @@ export async function crearChofer(
         body.licencia,
         toSqlDate(body.fecha_vencimiento_licencia),
         body.activo ? 1 : 0,
+        estadoInicial,
         usuarioId,
       ]
     );
@@ -110,6 +112,7 @@ export async function crearChofer(
       licencia: body.licencia,
       fecha_vencimiento_licencia: body.fecha_vencimiento_licencia,
       activo: body.activo,
+      estado: estadoInicial,
       usuario_id: usuarioId,
       usuario: body.email,
       rol_id: 2,
@@ -141,6 +144,7 @@ export async function listarChoferes(_req: Request, res: Response) {
          c.licencia,
          c.fecha_vencimiento_licencia,
          c.activo AS activo,
+         c.estado,
          c.usuario_id AS usuario_id,
          u.usuario AS usuario,
          u.rol_id AS rol_id
@@ -172,6 +176,7 @@ export async function obtenerChofer(
          c.licencia,
          c.fecha_vencimiento_licencia,
          c.activo AS activo,
+         c.estado,
          c.usuario_id AS usuario_id,
          u.usuario AS usuario,
          u.rol_id AS rol_id
@@ -206,6 +211,7 @@ export async function actualizarChofer(
     "licencia",
     "fecha_vencimiento_licencia",
     "activo",
+    "estado",
   ];
 
   // Construir SET dinámico solo con campos presentes
@@ -224,6 +230,21 @@ export async function actualizarChofer(
     }
   }
 
+  // Lógica de estado automático basado en activo
+  // Si se desactiva (activo = false), estado debe ser 'inactivo'
+  if (body.activo === false && !Object.prototype.hasOwnProperty.call(body, 'estado')) {
+    setParts.push('estado = ?');
+    values.push('inactivo');
+  }
+  // Si se activa (activo = true), el estado se determinará después considerando vencimientos
+  // Por ahora solo lo marcamos si no está en viaje
+  if (body.activo === true && !Object.prototype.hasOwnProperty.call(body, 'estado')) {
+    // El estado 'disponible' se validará después con la fecha de vencimiento
+    // Por ahora lo dejamos como disponible y se ajustará en el frontend
+    setParts.push('estado = ?');
+    values.push('disponible');
+  }
+
   if (setParts.length === 0) {
     return res
       .status(400)
@@ -233,6 +254,23 @@ export async function actualizarChofer(
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
+    
+    // Si se intenta cambiar a inactivo, verificar que no tenga viajes en curso
+    if (body.activo === false || (body.estado === 'inactivo')) {
+      const [[viajeActivo]]: any = await conn.query(
+        `SELECT v.id FROM viaje v 
+         WHERE v.chofer_id = ? AND v.estado = 'en curso' 
+         LIMIT 1`,
+        [id]
+      );
+      
+      if (viajeActivo) {
+        await conn.rollback();
+        return res.status(400).json({ 
+          error: 'No se puede desactivar el chofer porque tiene un viaje en curso' 
+        });
+      }
+    }
     
     // Verificar duplicados si se están actualizando esos campos
     if (body.dni) {
@@ -304,6 +342,7 @@ export async function actualizarChofer(
          c.licencia,
          c.fecha_vencimiento_licencia,
          c.activo AS chofer_activo,
+         c.estado AS chofer_estado,
          c.usuario_id AS chofer_usuario_id,
          u.id AS usuario_id,
          u.usuario AS usuario,
