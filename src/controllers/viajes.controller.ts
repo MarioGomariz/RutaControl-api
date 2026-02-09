@@ -12,9 +12,15 @@ export async function listarViajes(_req: Request, res: Response) {
          t.marca as tractor_marca,
          t.modelo as tractor_modelo,
          t.dominio as tractor_dominio,
-         t.estado as tractor_estado
+         t.estado as tractor_estado,
+         s.nombre as semirremolque_nombre,
+         s.dominio as semirremolque_dominio,
+         c.nombre as chofer_nombre,
+         c.apellido as chofer_apellido
        FROM viaje v
        LEFT JOIN tractores t ON v.tractor_id = t.id
+       LEFT JOIN semirremolque s ON v.semirremolque_id = s.id
+       LEFT JOIN chofer c ON v.chofer_id = c.id
        ORDER BY v.id DESC`
     );
     res.json(rows as any[]);
