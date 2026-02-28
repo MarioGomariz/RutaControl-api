@@ -1,29 +1,74 @@
 import { Request, Response } from "express";
-import { pool } from "../db/pool.js";
+import { prisma } from "../db/prisma.js";
 import type { Viaje, ViajeDestino } from "../types/viaje.js";
-import { toSqlDate, toSqlDateTime } from "../helpers/dateTransforme.js";
+import { EstadoViaje, EstadoUnidad, AlcanceViaje } from '@prisma/client';
+
+// Función para obtener la fecha límite actual en GMT-3 a las 00:00:00
+const getTodayGMT3 = (): Date => {
+  const now = new Date();
+  
+  // Convertimos la hora actual a string en la zona horaria GMT-3 (Argentina)
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  
+  // format returns MM/DD/YYYY
+  const parts = formatter.formatToParts(now);
+  const year = parts.find(p => p.type === 'year')?.value;
+  const month = parts.find(p => p.type === 'month')?.value;
+  const day = parts.find(p => p.type === 'day')?.value;
+
+  // Devolvemos el Date representando el inicio del día en GMT-3
+  return new Date(`${year}-${month}-${day}T00:00:00.000-03:00`);
+};
+
+const mapEstadoViajeIn = (estado: string): EstadoViaje => {
+  if (estado === 'en curso') return 'en_curso';
+  return estado as EstadoViaje;
+};
+
+const mapEstadoViajeOut = (estado: EstadoViaje): string => {
+  if (estado === 'en_curso') return 'en curso';
+  return estado;
+};
+
+const mapEstadoUnidadOut = (estado: EstadoUnidad | null | undefined): string | null => {
+  if (!estado) return null;
+  if (estado === 'en_reparacion') return 'en reparacion';
+  if (estado === 'fuera_de_servicio') return 'fuera de servicio';
+  if (estado === 'en_viaje') return 'en viaje';
+  return estado;
+};
 
 /** GET /api/viajes */
 export async function listarViajes(_req: Request, res: Response) {
   try {
-    const [rows] = await pool.query(
-      `SELECT 
-         v.*,
-         t.marca as tractor_marca,
-         t.modelo as tractor_modelo,
-         t.dominio as tractor_dominio,
-         t.estado as tractor_estado,
-         s.nombre as semirremolque_nombre,
-         s.dominio as semirremolque_dominio,
-         c.nombre as chofer_nombre,
-         c.apellido as chofer_apellido
-       FROM viaje v
-       LEFT JOIN tractores t ON v.tractor_id = t.id
-       LEFT JOIN semirremolque s ON v.semirremolque_id = s.id
-       LEFT JOIN chofer c ON v.chofer_id = c.id
-       ORDER BY v.id DESC`
-    );
-    res.json(rows as any[]);
+    const viajes = await prisma.viaje.findMany({
+      include: {
+        tractor: true,
+        semirremolque: true,
+        chofer: true
+      },
+      orderBy: { id: 'desc' }
+    });
+
+    const rows = viajes.map(v => ({
+      ...v,
+      estado: mapEstadoViajeOut(v.estado),
+      tractor_marca: v.tractor?.marca,
+      tractor_modelo: v.tractor?.modelo,
+      tractor_dominio: v.tractor?.dominio,
+      tractor_estado: mapEstadoUnidadOut(v.tractor?.estado),
+      semirremolque_nombre: v.semirremolque?.nombre,
+      semirremolque_dominio: v.semirremolque?.dominio,
+      chofer_nombre: v.chofer?.nombre,
+      chofer_apellido: v.chofer?.apellido
+    }));
+
+    res.json(rows);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Error al listar viajes" });
@@ -37,18 +82,21 @@ export async function obtenerViaje(
 ) {
   try {
     const { id } = req.params;
-    const [[viaje]]: any = await pool.query(
-      "SELECT * FROM viaje WHERE id = ? LIMIT 1",
-      [id]
-    );
+    const viaje = await prisma.viaje.findUnique({
+      where: { id: Number(id) },
+      include: {
+        destinos: {
+          orderBy: { orden: 'asc' }
+        }
+      }
+    });
+
     if (!viaje) return res.status(404).json({ error: "Viaje no encontrado" });
 
-    const [destinos] = await pool.query(
-      "SELECT * FROM destinos WHERE viaje_id = ? ORDER BY orden ASC",
-      [id]
-    );
-
-    res.json({ ...viaje, destinos });
+    res.json({
+      ...viaje,
+      estado: mapEstadoViajeOut(viaje.estado)
+    });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Error al obtener viaje" });
@@ -61,20 +109,22 @@ export async function obtenerViajesPorChofer(
 ) {
   try {
     const { chofer_id } = req.params;
-    const [rows] = await pool.query(
-      `SELECT 
-         v.*,
-         t.marca as tractor_marca,
-         t.modelo as tractor_modelo,
-         t.dominio as tractor_dominio,
-         t.estado as tractor_estado
-       FROM viaje v
-       LEFT JOIN tractores t ON v.tractor_id = t.id
-       WHERE v.chofer_id = ? 
-       ORDER BY v.fecha_hora_salida DESC`,
-      [chofer_id]
-    );
-    res.json(rows as any[]);
+    const viajes = await prisma.viaje.findMany({
+      where: { chofer_id: Number(chofer_id) },
+      include: { tractor: true },
+      orderBy: { fecha_hora_salida: 'desc' }
+    });
+
+    const rows = viajes.map(v => ({
+      ...v,
+      estado: mapEstadoViajeOut(v.estado),
+      tractor_marca: v.tractor?.marca,
+      tractor_modelo: v.tractor?.modelo,
+      tractor_dominio: v.tractor?.dominio,
+      tractor_estado: mapEstadoUnidadOut(v.tractor?.estado)
+    }));
+
+    res.json(rows);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Error al obtener viajes por chofer" });
@@ -87,6 +137,7 @@ export async function crearViaje(
   res: Response
 ) {
   const body = req.body;
+  
   // validación mínima
   const required: Array<keyof Viaje> = [
     "chofer_id",
@@ -104,168 +155,152 @@ export async function crearViaje(
       (body as any)[k] === null ||
       (body as any)[k] === ""
     ) {
-      return res
-        .status(400)
-        .json({ error: `Campo obligatorio faltante: ${k}` });
+      return res.status(400).json({ error: `Campo obligatorio faltante: ${k}` });
     }
   }
-  if (!["nacional", "internacional"].includes(body.alcance))
+  if (!["nacional", "internacional"].includes(body.alcance)) {
     return res.status(400).json({ error: "alcance inválido" });
-  if (!["programado", "en curso", "finalizado"].includes(body.estado))
+  }
+  if (!["programado", "en curso", "finalizado"].includes(body.estado)) {
     return res.status(400).json({ error: "estado inválido" });
+  }
 
   const destinos = body.destinos ?? [];
+  for (const d of destinos) {
+    if (typeof d.orden !== "number" || !d.ubicacion) {
+      return res.status(400).json({ error: "Destino inválido: requiere orden (number) y ubicacion (string)" });
+    }
+  }
 
-  const conn = await pool.getConnection();
   try {
-    await conn.beginTransaction();
+    const result = await prisma.$transaction(async (tx) => {
+      // Validar foreign keys existen y obtener datos completos para validar vencimientos
+      const chofer = await tx.chofer.findUnique({ where: { id: Number(body.chofer_id) } });
+      const tractor = await tx.tractor.findUnique({ where: { id: Number(body.tractor_id) } });
+      const semirremolque = await tx.semirremolque.findUnique({ where: { id: Number(body.semirremolque_id) } });
+      const servicio = await tx.servicio.findUnique({ where: { id: Number(body.servicio_id) } });
 
-    // Validar foreign keys existen y obtener datos completos para validar vencimientos
-    const checks = [
-      conn.query("SELECT id, fecha_vencimiento_licencia, activo FROM chofer WHERE id = ? LIMIT 1", [
-        body.chofer_id,
-      ]),
-      conn.query("SELECT id, estado, vencimiento_rto FROM tractores WHERE id = ? LIMIT 1", [
-        body.tractor_id,
-      ]),
-      conn.query("SELECT id, estado, tipo_servicio, vencimiento_rto, vencimiento_visual_externa, vencimiento_visual_interna, vencimiento_espesores, vencimiento_prueba_hidraulica, vencimiento_mangueras, vencimiento_valvula_flujo FROM semirremolque WHERE id = ? LIMIT 1", [
-        body.semirremolque_id,
-      ]),
-      conn.query("SELECT id FROM servicios WHERE id = ? LIMIT 1", [
-        body.servicio_id,
-      ]),
-    ];
-    const results = await Promise.all(checks);
-    if (results.some(([r]: any) => !r.length)) {
-      throw new Error(
-        "Alguna referencia (chofer/tractor/semi/servicio) no existe"
-      );
-    }
-
-    // Validar chofer
-    const [[chofer]]: any = results[0];
-    if (!chofer.activo) {
-      throw new Error('El chofer no está activo');
-    }
-    if (chofer.fecha_vencimiento_licencia) {
-      const vencimiento = new Date(chofer.fecha_vencimiento_licencia);
-      if (vencimiento < new Date()) {
-        throw new Error('El chofer tiene la licencia vencida');
+      if (!chofer || !tractor || !semirremolque || !servicio) {
+        throw new Error("Alguna referencia (chofer/tractor/semi/servicio) no existe");
       }
-    }
 
-    // Validar tractor
-    const [[tractor]]: any = results[1];
-    const estadosNoPermitidos = ['en reparacion', 'fuera de servicio'];
-    if (estadosNoPermitidos.includes(tractor.estado)) {
-      const estadoMensajes: Record<string, string> = {
-        'en reparacion': 'El tractor está en reparación',
-        'fuera de servicio': 'El tractor está fuera de servicio'
-      };
-      throw new Error(estadoMensajes[tractor.estado] || 'El tractor no está disponible');
-    }
-    if (tractor.vencimiento_rto) {
-      const vencimiento = new Date(tractor.vencimiento_rto);
-      if (vencimiento < new Date()) {
-        throw new Error('El tractor tiene el RTO vencido');
+      // Validar chofer
+      if (!chofer.activo) {
+        throw new Error('El chofer no está activo');
       }
-    }
+      if (chofer.fecha_vencimiento_licencia) {
+        // Obtenemos la fecha de vencimiento. Prisma la trae al parsear la DB.
+        // Aseguramos que la comparación sea contra el inicio de hoy en Argentina
+        const vencimiento = new Date(chofer.fecha_vencimiento_licencia);
+        const hoyGMT3 = getTodayGMT3();
+        if (vencimiento < hoyGMT3) {
+          throw new Error('El chofer tiene la licencia vencida');
+        }
+      }
 
-    // Validar semirremolque
-    const [[semirremolque]]: any = results[2];
-    if (estadosNoPermitidos.includes(semirremolque.estado)) {
-      const estadoMensajes: Record<string, string> = {
-        'en reparacion': 'El semirremolque está en reparación',
-        'fuera de servicio': 'El semirremolque está fuera de servicio'
-      };
-      throw new Error(estadoMensajes[semirremolque.estado] || 'El semirremolque no está disponible');
-    }
-    
-    // Validar vencimientos del semirremolque según tipo de servicio
-    if (semirremolque.tipo_servicio) {
-      const camposRequeridos: Record<string, string[]> = {
-        'gas líquido': ['vencimiento_mangueras', 'vencimiento_prueba_hidraulica', 'vencimiento_valvula_flujo'],
-        'combustible líquido': ['vencimiento_rto', 'vencimiento_visual_externa', 'vencimiento_visual_interna', 'vencimiento_espesores']
-      };
+      // Validar tractor
+      const estadosNoPermitidos: EstadoUnidad[] = ['en_reparacion', 'fuera_de_servicio'];
+      if (estadosNoPermitidos.includes(tractor.estado)) {
+        const estadoMensajes: Record<string, string> = {
+          'en_reparacion': 'El tractor está en reparación',
+          'fuera_de_servicio': 'El tractor está fuera de servicio'
+        };
+        throw new Error(estadoMensajes[tractor.estado] || 'El tractor no está disponible');
+      }
+      if (tractor.vencimiento_rto) {
+        const vencimiento = new Date(tractor.vencimiento_rto);
+        const hoyGMT3 = getTodayGMT3();
+        if (vencimiento < hoyGMT3) {
+          throw new Error('El tractor tiene el RTO vencido');
+        }
+      }
+
+      // Validar semirremolque
+      if (estadosNoPermitidos.includes(semirremolque.estado)) {
+        const estadoMensajes: Record<string, string> = {
+          'en_reparacion': 'El semirremolque está en reparación',
+          'fuera_de_servicio': 'El semirremolque está fuera de servicio'
+        };
+        throw new Error(estadoMensajes[semirremolque.estado] || 'El semirremolque no está disponible');
+      }
       
-      const campos = camposRequeridos[semirremolque.tipo_servicio.toLowerCase()] || [];
-      const etiquetas: Record<string, string> = {
-        'vencimiento_rto': 'RTO',
-        'vencimiento_visual_externa': 'Visual Externa',
-        'vencimiento_visual_interna': 'Visual Interna',
-        'vencimiento_espesores': 'Espesores',
-        'vencimiento_prueba_hidraulica': 'Prueba Hidráulica',
-        'vencimiento_mangueras': 'Mangueras',
-        'vencimiento_valvula_flujo': 'Válvula de Flujo'
-      };
-      
-      for (const campo of campos) {
-        if (semirremolque[campo]) {
-          const vencimiento = new Date(semirremolque[campo]);
-          if (vencimiento < new Date()) {
-            throw new Error(`El semirremolque tiene ${etiquetas[campo] || campo} vencido`);
+      // Validar vencimientos del semirremolque según tipo de servicio
+      if (semirremolque.tipo_servicio) {
+        const camposRequeridos: Record<string, (keyof typeof semirremolque)[]> = {
+          'gas líquido': ['vencimiento_mangueras', 'vencimiento_prueba_hidraulica', 'vencimiento_valvula_flujo'],
+          'gas licuado': ['vencimiento_mangueras', 'vencimiento_prueba_hidraulica', 'vencimiento_valvula_flujo'],
+          'combustible líquido': ['vencimiento_rto', 'vencimiento_visual_externa', 'vencimiento_visual_interna', 'vencimiento_espesores']
+        };
+        
+        const campos = camposRequeridos[semirremolque.tipo_servicio.toLowerCase()] || [];
+        const etiquetas: Record<string, string> = {
+          'vencimiento_rto': 'RTO',
+          'vencimiento_visual_externa': 'Visual Externa',
+          'vencimiento_visual_interna': 'Visual Interna',
+          'vencimiento_espesores': 'Espesores',
+          'vencimiento_prueba_hidraulica': 'Prueba Hidráulica',
+          'vencimiento_mangueras': 'Mangueras',
+          'vencimiento_valvula_flujo': 'Válvula de Flujo'
+        };
+        
+        for (const campo of campos) {
+          const valor = semirremolque[campo];
+          if (valor) {
+            const vencimiento = new Date(valor as any);
+            const hoyGMT3 = getTodayGMT3();
+            if (vencimiento < hoyGMT3) {
+              throw new Error(`El semirremolque tiene ${etiquetas[campo] || campo} vencido`);
+            }
           }
         }
       }
-    }
 
-    const [r] = await conn.query(
-      `INSERT INTO viaje
-      (chofer_id, tractor_id, semirremolque_id, servicio_id,
-       alcance, origen, cantidad_destinos, fecha_hora_salida, estado)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        body.chofer_id,
-        body.tractor_id,
-        body.semirremolque_id,
-        body.servicio_id,
-        body.alcance,
-        body.origen,
-        destinos.length,
-        toSqlDateTime(body.fecha_hora_salida),
-        body.estado,
-      ]
-    );
-    const viajeId = (r as any).insertId;
+      const estadoMapped = mapEstadoViajeIn(body.estado);
 
-    // Si el viaje se crea en estado 'en curso', actualizar estados de unidades
-    if (body.estado === 'en curso') {
-      await conn.query(
-        "UPDATE tractores SET estado = 'en viaje' WHERE id = ?",
-        [body.tractor_id]
-      );
-      await conn.query(
-        "UPDATE semirremolque SET estado = 'en viaje' WHERE id = ?",
-        [body.semirremolque_id]
-      );
-    }
+      const viajeCreado = await tx.viaje.create({
+        data: {
+          chofer_id: Number(body.chofer_id),
+          tractor_id: Number(body.tractor_id),
+          semirremolque_id: Number(body.semirremolque_id),
+          servicio_id: Number(body.servicio_id),
+          alcance: body.alcance as AlcanceViaje,
+          origen: body.origen,
+          cantidad_destinos: destinos.length,
+          fecha_hora_salida: new Date(body.fecha_hora_salida),
+          estado: estadoMapped,
+          destinos: {
+            create: destinos.map(d => ({
+              orden: d.orden,
+              ubicacion: d.ubicacion
+            }))
+          }
+        }
+      });
 
-    // Insertar destinos (si vienen)
-    for (const d of destinos) {
-      if (typeof d.orden !== "number" || !d.ubicacion) {
-        await conn.rollback();
-        return res
-          .status(400)
-          .json({
-            error:
-              "Destino inválido: requiere orden (number) y ubicacion (string)",
-          });
+      // Si el viaje se crea en estado 'en curso', actualizar estados de unidades y chofer
+      if (estadoMapped === 'en_curso') {
+        await tx.chofer.update({
+          where: { id: Number(body.chofer_id) },
+          data: { estado: 'en_viaje' }
+        });
+        await tx.tractor.update({
+          where: { id: Number(body.tractor_id) },
+          data: { estado: 'en_viaje' }
+        });
+        await tx.semirremolque.update({
+          where: { id: Number(body.semirremolque_id) },
+          data: { estado: 'en_viaje' }
+        });
       }
-      await conn.query(
-        "INSERT INTO destinos (viaje_id, orden, ubicacion) VALUES (?, ?, ?)",
-        [viajeId, d.orden, d.ubicacion]
-      );
-    }
 
-    await conn.commit();
-    res.status(201).json({ id: viajeId });
+      return viajeCreado.id;
+    });
+
+    res.status(201).json({ id: result });
   } catch (e: any) {
-    await conn.rollback();
     const msg = e?.message || "Error al crear viaje";
     console.error(e);
     res.status(400).json({ error: msg });
-  } finally {
-    conn.release();
   }
 }
 
@@ -278,117 +313,85 @@ export async function actualizarViaje(
   >,
   res: Response
 ) {
-  const { id } = req.params;
+  const idViaje = Number(req.params.id);
   const b = req.body;
-  const conn = await pool.getConnection();
 
   try {
-    await conn.beginTransaction();
+    await prisma.$transaction(async (tx) => {
+      // Obtener el estado actual del viaje y las unidades asignadas
+      const viajeActual = await tx.viaje.findUnique({
+        where: { id: idViaje },
+        select: { estado: true, chofer_id: true, tractor_id: true, semirremolque_id: true }
+      });
 
-    // Obtener el estado actual del viaje y las unidades asignadas
-    const [[viajeActual]]: any = await conn.query(
-      "SELECT estado, tractor_id, semirremolque_id FROM viaje WHERE id = ? LIMIT 1",
-      [id]
-    );
-
-    if (!viajeActual) {
-      await conn.rollback();
-      return res.status(404).json({ error: "Viaje no encontrado" });
-    }
-
-    const estadoAnterior = viajeActual.estado;
-    const nuevoEstado = b.estado ?? estadoAnterior;
-
-    // update básico del viaje
-    const [r] = await conn.query(
-      `UPDATE viaje SET
-        chofer_id = COALESCE(?, chofer_id),
-        tractor_id = COALESCE(?, tractor_id),
-        semirremolque_id = COALESCE(?, semirremolque_id),
-        servicio_id = COALESCE(?, servicio_id),
-        alcance = COALESCE(?, alcance),
-        origen = COALESCE(?, origen),
-        fecha_hora_salida = COALESCE(?, fecha_hora_salida),
-        estado = COALESCE(?, estado)
-      WHERE id = ?`,
-      [
-        b.chofer_id ?? null,
-        b.tractor_id ?? null,
-        b.semirremolque_id ?? null,
-        b.servicio_id ?? null,
-        b.alcance ?? null,
-        b.origen ?? null,
-        b.fecha_hora_salida ? toSqlDateTime(b.fecha_hora_salida) : null,
-        b.estado ?? null,
-        id,
-      ]
-    );
-
-    if ((r as any).affectedRows === 0) {
-      await conn.rollback();
-      return res.status(404).json({ error: "Viaje no encontrado" });
-    }
-
-    // Actualizar estados de unidades según cambio de estado del viaje
-    const tractorId = b.tractor_id ?? viajeActual.tractor_id;
-    const semirremolqueId = b.semirremolque_id ?? viajeActual.semirremolque_id;
-
-    // Si el viaje pasa de 'programado' a 'en curso'
-    if (estadoAnterior === 'programado' && nuevoEstado === 'en curso') {
-      await conn.query(
-        "UPDATE tractores SET estado = 'en viaje' WHERE id = ?",
-        [tractorId]
-      );
-      await conn.query(
-        "UPDATE semirremolque SET estado = 'en viaje' WHERE id = ?",
-        [semirremolqueId]
-      );
-    }
-
-    // Si el viaje pasa a 'finalizado'
-    if (nuevoEstado === 'finalizado' && estadoAnterior !== 'finalizado') {
-      await conn.query(
-        "UPDATE tractores SET estado = 'disponible' WHERE id = ?",
-        [tractorId]
-      );
-      await conn.query(
-        "UPDATE semirremolque SET estado = 'disponible' WHERE id = ?",
-        [semirremolqueId]
-      );
-    }
-
-    // si vienen destinos -> reemplazar todos
-    if (b.destinos) {
-      await conn.query("DELETE FROM destinos WHERE viaje_id = ?", [id]);
-      for (const d of b.destinos) {
-        if (typeof d.orden !== "number" || !d.ubicacion) {
-          await conn.rollback();
-          return res
-            .status(400)
-            .json({
-              error:
-                "Destino inválido: requiere orden (number) y ubicacion (string)",
-            });
-        }
-        await conn.query(
-          "INSERT INTO destinos (viaje_id, orden, ubicacion) VALUES (?, ?, ?)",
-          [id, d.orden, d.ubicacion]
-        );
+      if (!viajeActual) {
+        throw new Error("Viaje no encontrado_404");
       }
-      await conn.query("UPDATE viaje SET cantidad_destinos = ? WHERE id = ?", [
-        b.destinos.length,
-        id,
-      ]);
-    }
 
-    await conn.commit();
+      const estadoAnterior = viajeActual.estado;
+      const estadoNuevoString = b.estado ? mapEstadoViajeIn(b.estado) : estadoAnterior;
+
+      const updateData: any = {};
+      if (b.chofer_id !== undefined) updateData.chofer_id = Number(b.chofer_id);
+      if (b.tractor_id !== undefined) updateData.tractor_id = Number(b.tractor_id);
+      if (b.semirremolque_id !== undefined) updateData.semirremolque_id = Number(b.semirremolque_id);
+      if (b.servicio_id !== undefined) updateData.servicio_id = Number(b.servicio_id);
+      if (b.alcance !== undefined) updateData.alcance = b.alcance;
+      if (b.origen !== undefined) updateData.origen = b.origen;
+      if (b.fecha_hora_salida !== undefined) updateData.fecha_hora_salida = b.fecha_hora_salida ? new Date(b.fecha_hora_salida) : null;
+      if (b.estado !== undefined) updateData.estado = estadoNuevoString;
+
+      // Handle destinations overwrite if provided
+      if (b.destinos) {
+        for (const d of b.destinos) {
+          if (typeof d.orden !== "number" || !d.ubicacion) {
+            throw new Error("Destino inválido: requiere orden (number) y ubicacion (string)_400");
+          }
+        }
+        
+        updateData.cantidad_destinos = b.destinos.length;
+        
+        // delete old and create new
+        await tx.destino.deleteMany({ where: { viaje_id: idViaje } });
+        updateData.destinos = {
+          create: b.destinos.map(d => ({
+            orden: d.orden,
+            ubicacion: d.ubicacion
+          }))
+        };
+      }
+
+      await tx.viaje.update({
+        where: { id: idViaje },
+        data: updateData
+      });
+
+      // Actualizar estados de unidades según cambio de estado del viaje
+      const choferId = b.chofer_id !== undefined ? Number(b.chofer_id) : viajeActual.chofer_id;
+      const tractorId = b.tractor_id !== undefined ? Number(b.tractor_id) : viajeActual.tractor_id;
+      const semirremolqueId = b.semirremolque_id !== undefined ? Number(b.semirremolque_id) : viajeActual.semirremolque_id;
+
+      // Si el viaje pasa de 'programado' a 'en curso'
+      if (estadoAnterior === 'programado' && estadoNuevoString === 'en_curso') {
+        if (choferId) await tx.chofer.update({ where: { id: choferId }, data: { estado: 'en_viaje' } });
+        if (tractorId) await tx.tractor.update({ where: { id: tractorId }, data: { estado: 'en_viaje' } });
+        if (semirremolqueId) await tx.semirremolque.update({ where: { id: semirremolqueId }, data: { estado: 'en_viaje' } });
+      }
+
+      // Si el viaje pasa a 'finalizado'
+      if (estadoNuevoString === 'finalizado' && estadoAnterior !== 'finalizado') {
+        if (choferId) await tx.chofer.update({ where: { id: choferId }, data: { estado: 'disponible' } });
+        if (tractorId) await tx.tractor.update({ where: { id: tractorId }, data: { estado: 'disponible' } });
+        if (semirremolqueId) await tx.semirremolque.update({ where: { id: semirremolqueId }, data: { estado: 'disponible' } });
+      }
+    });
+
     res.json({ ok: true });
-  } catch (e) {
-    await conn.rollback();
+  } catch (e: any) {
     console.error(e);
+    if (e.message.includes("_404")) return res.status(404).json({ error: "Viaje no encontrado" });
+    if (e.message.includes("_400")) return res.status(400).json({ error: e.message.replace("_400", "") });
     res.status(500).json({ error: "Error al actualizar viaje" });
-  } finally {
-    conn.release();
   }
 }
 
@@ -397,50 +400,41 @@ export async function eliminarViaje(
   req: Request<{ id: string }>,
   res: Response
 ) {
-  const { id } = req.params;
-  const conn = await pool.getConnection();
+  const idViaje = Number(req.params.id);
   
   try {
-    await conn.beginTransaction();
-    
-    // Obtener las unidades asignadas antes de eliminar el viaje
-    const [[viaje]]: any = await conn.query(
-      "SELECT tractor_id, semirremolque_id, estado FROM viaje WHERE id = ? LIMIT 1",
-      [id]
-    );
-    
-    if (!viaje) {
-      await conn.rollback();
-      return res.status(404).json({ error: "Viaje no encontrado" });
-    }
-    
-    // Eliminar el viaje
-    await conn.query("DELETE FROM viaje WHERE id = ?", [id]);
-    
-    // Cambiar estado de las unidades a 'disponible' solo si el viaje no estaba finalizado
-    if (viaje.estado !== 'finalizado') {
-      if (viaje.tractor_id) {
-        await conn.query(
-          "UPDATE tractores SET estado = 'disponible' WHERE id = ?",
-          [viaje.tractor_id]
-        );
+    await prisma.$transaction(async (tx) => {
+      // Obtener las unidades asignadas antes de eliminar el viaje
+      const viaje = await tx.viaje.findUnique({
+        where: { id: idViaje },
+        select: { chofer_id: true, tractor_id: true, semirremolque_id: true, estado: true }
+      });
+      
+      if (!viaje) {
+        throw new Error("Viaje no encontrado_404");
       }
-      if (viaje.semirremolque_id) {
-        await conn.query(
-          "UPDATE semirremolque SET estado = 'disponible' WHERE id = ?",
-          [viaje.semirremolque_id]
-        );
+      
+      // Eliminar el viaje
+      await tx.viaje.delete({ where: { id: idViaje } });
+      
+      // Cambiar estado de las unidades a 'disponible' solo si el viaje no estaba finalizado
+      if (viaje.estado !== 'finalizado') {
+        if (viaje.chofer_id) {
+          await tx.chofer.update({ where: { id: viaje.chofer_id }, data: { estado: 'disponible' } });
+        }
+        if (viaje.tractor_id) {
+          await tx.tractor.update({ where: { id: viaje.tractor_id }, data: { estado: 'disponible' } });
+        }
+        if (viaje.semirremolque_id) {
+          await tx.semirremolque.update({ where: { id: viaje.semirremolque_id }, data: { estado: 'disponible' } });
+        }
       }
-    }
+    });
     
-    await conn.commit();
     res.json({ ok: true });
-  } catch (e) {
-    await conn.rollback();
+  } catch (e: any) {
     console.error(e);
+    if (e.message.includes("_404")) return res.status(404).json({ error: "Viaje no encontrado" });
     res.status(500).json({ error: "Error al eliminar viaje" });
-  } finally {
-    conn.release();
   }
 }
-

@@ -1,7 +1,7 @@
 import { Router, Response } from "express";
 import type { AuthRequest } from "../middlewares/auth.middleware.js";
 import { requireAuth } from "../middlewares/auth.middleware.js";
-import { pool } from "../db/pool.js";
+import { prisma } from "../db/prisma.js";
 import jwt from "jsonwebtoken";
 import type { Request } from "express";
 import { comparePassword } from "../utils/password.js";
@@ -19,13 +19,10 @@ router.post("/login", async (req: Request<{}, {}, LoginBody>, res: Response) => 
       return res.status(400).json({ error: "Usuario y password requeridos" });
     }
 
-    const [rows] = await pool.query(
-      `SELECT *
-       FROM usuario
-       WHERE usuario = ? LIMIT 1`,
-      [usuario]
-    );
-    const user = (rows as any[])?.[0];
+    const user = await prisma.usuario.findUnique({
+      where: { usuario }
+    });
+
     if (!user) return res.status(400).json({ error: "Credenciales inválidas" });
     if (!user.activo) return res.status(403).json({ error: "Usuario inactivo" });
 
@@ -48,26 +45,17 @@ router.get("/me", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.auth!.id;
 
-    const [rows] = await pool.query(
-      `SELECT 
-         id,
-         usuario,
-         rol_id
-       FROM usuario 
-       WHERE id = ? LIMIT 1`,
-      [userId]
-    );
-    const u = (rows as any[])?.[0];
+    const u = await prisma.usuario.findUnique({
+      where: { id: userId }
+    });
+
     if (!u) return res.status(404).json({ error: "Usuario no encontrado" });
 
     if(u.rol_id == 2){
-      const [rows] = await pool.query(
-        `SELECT *
-         FROM chofer
-         WHERE email = ? LIMIT 1`,
-        [u.usuario]
-      );
-      const chofer = (rows as any[])?.[0];
+      const chofer = await prisma.chofer.findUnique({
+        where: { email: u.usuario }
+      });
+
       if (!chofer) return res.status(404).json({ error: "Chofer no encontrado" });
       return res.json({
         id: chofer.id,

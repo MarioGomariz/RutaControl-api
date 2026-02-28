@@ -1,8 +1,7 @@
 import { Request, Response } from 'express';
-import { pool } from '../db/pool.js';
+import { prisma } from '../db/prisma.js';
 import jwt from 'jsonwebtoken';
 import { comparePassword, hashPassword } from '../utils/password.js';
-import type { Usuario } from '../types/usuario.js';
 
 type LoginBody = { usuario: string; password: string };
 
@@ -16,11 +15,9 @@ export async function login(req: Request<{}, {}, LoginBody>, res: Response) {
       return res.status(400).json({ error: 'Usuario y password requeridos' });
     }
 
-    const [rows] = await pool.query(
-      'SELECT * FROM usuario WHERE usuario = ? LIMIT 1',
-      [usuario]
-    );
-    const user = (rows as Array<Usuario>)?.[0];
+    const user = await prisma.usuario.findUnique({
+      where: { usuario }
+    });
     
     if (!user) {
       console.log('[LOGIN] Error: Usuario no encontrado:', usuario);
@@ -34,14 +31,13 @@ export async function login(req: Request<{}, {}, LoginBody>, res: Response) {
       return res.status(403).json({ error: 'Usuario inactivo' });
     }
 
-    // Si es chofer (rol_id = 2), verificar estado
+    // Si es chofer (rol_id = 2), verificar estado. El email del chofer es igual al usuario.
     if (user.rol_id === 2) {
-      const [[chofer]]: any = await pool.query(
-        'SELECT estado FROM chofer WHERE usuario_id = ? LIMIT 1',
-        [user.id]
-      );
+      const chofer = await prisma.chofer.findUnique({
+        where: { email: user.usuario }
+      });
       
-      if (chofer && chofer.estado === 'inactivo') {
+      if (chofer && !chofer.activo) {
         console.log('[LOGIN] Error: Chofer inactivo');
         return res.status(403).json({ error: 'Chofer inactivo. No puede iniciar sesión.' });
       }
@@ -77,14 +73,18 @@ export async function createAdmin(req: Request<{}, {}, CreateAdminBody>, res: Re
     if (!usuario || !password) return res.status(400).json({ error: 'Usuario y password requeridos' });
 
     const hash = await hashPassword(password);
-    const [result] = await pool.query(
-      `INSERT INTO usuario (usuario, contrasena, rol_id, activo)
-       VALUES (?, ?, 1, 1)`,
-      [usuario, hash]
-    );
-    return res.json({ id: (result as any).insertId });
+    const result = await prisma.usuario.create({
+      data: {
+        usuario,
+        contrasena: hash,
+        rol_id: 1,
+        activo: true
+      }
+    });
+
+    return res.json({ id: result.id });
   } catch (e: any) {
-    if (e?.code === 'ER_DUP_ENTRY') {
+    if (e?.code === 'P2002') {
       return res.status(400).json({ error: 'Usuario ya existe' });
     }
     console.error(e);

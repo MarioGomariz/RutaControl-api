@@ -1,9 +1,8 @@
 import { Request, Response } from "express";
-import { pool } from "../db/pool.js";
+import { prisma } from "../db/prisma.js";
 import { hashPassword } from "../utils/password.js";
 import crypto from "crypto";
 import type { Chofer } from "../types/chofer.js";
-import { toSqlDate } from "../helpers/dateTransforme.js";
 
 type CrearChoferBody = Chofer;
 
@@ -34,125 +33,103 @@ export async function crearChofer(
     }
   }
 
-  const conn = await pool.getConnection();
   try {
-    await conn.beginTransaction();
-    
-    // Verificar DNI duplicado
-    const [[dupDni]]: any = await conn.query(
-      "SELECT id FROM chofer WHERE dni = ? LIMIT 1",
-      [body.dni]
-    );
-    if (dupDni) throw new Error("Ya existe un chofer registrado con ese DNI");
-    
-    // Verificar email duplicado
-    const [[dupEmail]]: any = await conn.query(
-      "SELECT id FROM chofer WHERE email = ? LIMIT 1",
-      [body.email]
-    );
-    if (dupEmail) throw new Error("Ya existe un chofer registrado con ese email");
-    
-    // Verificar licencia duplicada
-    const [[dupLicencia]]: any = await conn.query(
-      "SELECT id FROM chofer WHERE licencia = ? LIMIT 1",
-      [body.licencia]
-    );
-    if (dupLicencia) throw new Error("Ya existe un chofer registrado con ese número de licencia");
-
-    // Password temporal (en prod: enviar flujo de seteo)
+    // Password temporal
     const temp = crypto.randomUUID().slice(0, 10);
     console.log('[CREAR_CHOFER] Password temporal generada:', temp);
     
     const hash = await hashPassword(temp);
-    console.log('[CREAR_CHOFER] Hash generado, longitud:', hash.length);
+    console.log('[CREAR_CHOFER] Hash generado');
 
-    // Usuario (rol 2)
-    console.log('[CREAR_CHOFER] Creando usuario con email:', body.email);
-    const [uRes] = await conn.query(
-      `INSERT INTO usuario (usuario, contrasena, rol_id)
-       VALUES (?, ?, ?)`,
-      [body.email, hash, 2]
-    );
-
-    const usuarioId = (uRes as any).insertId;
-    console.log('[CREAR_CHOFER] Usuario creado con ID:', usuarioId);
-
-    // Chofer - estado inicial basado en activo
     const estadoInicial = body.activo ? 'disponible' : 'inactivo';
-    const [cRes] = await conn.query(
-      `INSERT INTO chofer
-      (nombre, apellido, dni, telefono, email, licencia, fecha_vencimiento_licencia, activo, estado, usuario_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        body.nombre,
-        body.apellido,
-        body.dni,
-        body.telefono,
-        body.email,
-        body.licencia,
-        toSqlDate(body.fecha_vencimiento_licencia),
-        body.activo ? 1 : 0,
-        estadoInicial,
-        usuarioId,
-      ]
-    );
 
-    await conn.commit();
-    const choferId = (cRes as any).insertId;
-    console.log('[CREAR_CHOFER] Chofer creado exitosamente, ID:', choferId);
+    const result = await prisma.$transaction(async (tx) => {
+      // Verificar DNI duplicado
+      const dupDni = await tx.chofer.findUnique({ where: { dni: body.dni } });
+      if (dupDni) throw new Error("Ya existe un chofer registrado con ese DNI");
+      
+      // Verificar email duplicado
+      const dupEmail = await tx.chofer.findUnique({ where: { email: body.email } });
+      if (dupEmail) throw new Error("Ya existe un chofer registrado con ese email");
+      
+      // Verificar licencia duplicada
+      if (body.licencia) {
+        const dupLic = await tx.chofer.findFirst({ where: { licencia: body.licencia } });
+        if (dupLic) throw new Error("Ya existe un chofer registrado con ese número de licencia");
+      }
+
+      const usuario = await tx.usuario.create({
+        data: {
+          usuario: body.email,
+          contrasena: hash,
+          rol_id: 2,
+          activo: body.activo
+        }
+      });
+
+      const chofer = await tx.chofer.create({
+        data: {
+          nombre: body.nombre,
+          apellido: body.apellido,
+          dni: body.dni,
+          telefono: body.telefono,
+          email: body.email,
+          licencia: body.licencia,
+          fecha_vencimiento_licencia: body.fecha_vencimiento_licencia ? new Date(body.fecha_vencimiento_licencia) : null,
+          activo: body.activo,
+          estado: estadoInicial,
+          usuario_id: usuario.id
+        }
+      });
+
+      return { chofer, usuario };
+    });
+
+    console.log('[CREAR_CHOFER] Chofer creado exitosamente, ID:', result.chofer.id);
     
-    // Devolver el chofer completo para que el frontend pueda usarlo
     const choferCompleto = {
-      id: choferId,
-      nombre: body.nombre,
-      apellido: body.apellido,
-      dni: body.dni,
-      telefono: body.telefono,
-      email: body.email,
-      licencia: body.licencia,
-      fecha_vencimiento_licencia: body.fecha_vencimiento_licencia,
-      activo: body.activo,
-      estado: estadoInicial,
-      usuario_id: usuarioId,
-      usuario: body.email,
-      rol_id: 2,
-      password_temporal: temp // solo dev para testear
+      ...result.chofer,
+      usuario: result.usuario.usuario,
+      rol_id: result.usuario.rol_id,
+      password_temporal: temp
     };
     
-    console.log('[CREAR_CHOFER] Devolviendo chofer con ID:', choferCompleto.id);
     return res.status(201).json(choferCompleto);
   } catch (e: any) {
-    await conn.rollback();
     console.error('[CREAR_CHOFER] Error al crear chofer:', e);
     if (e?.message) return res.status(400).json({ error: e.message });
     return res.status(500).json({ error: "Error al crear chofer" });
-  } finally {
-    conn.release();
   }
 }
 
 export async function listarChoferes(_req: Request, res: Response) {
   try {
-    const [rows] = await pool.query(
-      `SELECT
-         c.id AS id,
-         c.nombre,
-         c.apellido,
-         c.dni,
-         c.telefono,
-         c.email AS email,
-         c.licencia,
-         c.fecha_vencimiento_licencia,
-         c.activo AS activo,
-         c.estado,
-         c.usuario_id AS usuario_id,
-         u.usuario AS usuario,
-         u.rol_id AS rol_id
-       FROM chofer c
-       JOIN usuario u ON u.id = c.usuario_id
-       ORDER BY c.id DESC`
-    );
-    res.json(rows as any[]);
+    const choferes = await prisma.chofer.findMany({
+      include: {
+        usuario: true
+      },
+      orderBy: {
+        id: 'desc'
+      }
+    });
+
+    const rows = choferes.map(c => ({
+      id: c.id,
+      nombre: c.nombre,
+      apellido: c.apellido,
+      dni: c.dni,
+      telefono: c.telefono,
+      email: c.email,
+      licencia: c.licencia,
+      fecha_vencimiento_licencia: c.fecha_vencimiento_licencia?.toISOString().split('T')[0] || null,
+      activo: c.activo,
+      estado: c.estado,
+      usuario_id: c.usuario_id,
+      usuario: c.usuario?.usuario,
+      rol_id: c.usuario?.rol_id
+    }));
+
+    res.json(rows);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Error al listar choferes" });
@@ -165,29 +142,19 @@ export async function obtenerChofer(
 ) {
   try {
     const { id } = req.params;
-    const [rows] = await pool.query(
-      `SELECT
-         c.id AS id,
-         c.nombre,
-         c.apellido,
-         c.dni,
-         c.telefono,
-         c.email AS email,
-         c.licencia,
-         c.fecha_vencimiento_licencia,
-         c.activo AS activo,
-         c.estado,
-         c.usuario_id AS usuario_id,
-         u.usuario AS usuario,
-         u.rol_id AS rol_id
-       FROM chofer c
-       JOIN usuario u ON u.id = c.usuario_id
-       WHERE c.id = ? LIMIT 1`,
-      [id]
-    );
-    const row = (rows as any[])[0] as any | undefined;
-    if (!row) return res.status(404).json({ error: "Chofer no encontrado" });
-    res.json(row);
+    const chofer = await prisma.chofer.findUnique({
+      where: { id: Number(id) },
+      include: { usuario: true }
+    });
+
+    if (!chofer) return res.status(404).json({ error: "Chofer no encontrado" });
+
+    res.json({
+      ...chofer,
+      fecha_vencimiento_licencia: chofer.fecha_vencimiento_licencia?.toISOString().split('T')[0] || null,
+      usuario: chofer.usuario?.usuario,
+      rol_id: chofer.usuario?.rol_id
+    });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Error al obtener chofer" });
@@ -198,169 +165,110 @@ export async function actualizarChofer(
   req: Request<{ id: string }>,
   res: Response
 ) {
-  const { id } = req.params;
+  const idStr = req.params.id;
+  const id = Number(idStr);
   const body = req.body as Partial<Chofer>;
 
-  // Campos permitidos para actualizar
-  const allowed: Array<keyof Chofer> = [
-    "nombre",
-    "apellido",
-    "dni",
-    "telefono",
-    "email",
-    "licencia",
-    "fecha_vencimiento_licencia",
-    "activo",
-    "estado",
-  ];
-
-  // Construir SET dinámico solo con campos presentes
-  const setParts: string[] = [];
-  const values: any[] = [];
-
-  for (const key of allowed) {
-    if (Object.prototype.hasOwnProperty.call(body, key)) {
-      if (key === "activo" && body.activo !== undefined) {
-        setParts.push(`${key} = ?`);
-        values.push(body.activo ? 1 : 0);
-      } else if (key !== "activo") {
-        setParts.push(`${key} = ?`);
-        values.push((body as any)[key]);
-      }
-    }
+  if (Object.keys(body).length === 0) {
+    return res.status(400).json({ error: "No se proporcionaron campos para actualizar" });
   }
 
-  // Lógica de estado automático basado en activo
-  // Si se desactiva (activo = false), estado debe ser 'inactivo'
-  if (body.activo === false && !Object.prototype.hasOwnProperty.call(body, 'estado')) {
-    setParts.push('estado = ?');
-    values.push('inactivo');
-  }
-  // Si se activa (activo = true), el estado se determinará después considerando vencimientos
-  // Por ahora solo lo marcamos si no está en viaje
-  if (body.activo === true && !Object.prototype.hasOwnProperty.call(body, 'estado')) {
-    // El estado 'disponible' se validará después con la fecha de vencimiento
-    // Por ahora lo dejamos como disponible y se ajustará en el frontend
-    setParts.push('estado = ?');
-    values.push('disponible');
-  }
-
-  if (setParts.length === 0) {
-    return res
-      .status(400)
-      .json({ error: "No se proporcionaron campos para actualizar" });
-  }
-
-  const conn = await pool.getConnection();
   try {
-    await conn.beginTransaction();
-    
-    // Si se intenta cambiar a inactivo, verificar que no tenga viajes en curso
-    if (body.activo === false || (body.estado === 'inactivo')) {
-      const [[viajeActivo]]: any = await conn.query(
-        `SELECT v.id FROM viaje v 
-         WHERE v.chofer_id = ? AND v.estado = 'en curso' 
-         LIMIT 1`,
-        [id]
-      );
-      
-      if (viajeActivo) {
-        await conn.rollback();
-        return res.status(400).json({ 
-          error: 'No se puede desactivar el chofer porque tiene un viaje en curso' 
+    const choferActualizado = await prisma.$transaction(async (tx) => {
+      // Verificar si existe el chofer
+      const existing = await tx.chofer.findUnique({ where: { id } });
+      if (!existing) throw new Error("Chofer no encontrado");
+
+      // Si se intenta cambiar a inactivo, verificar que no tenga viajes en curso
+      if (body.activo === false || body.estado === 'inactivo') {
+        const viajeActivo = await tx.viaje.findFirst({
+          where: {
+            chofer_id: id,
+            estado: 'en_curso'
+          }
         });
+        
+        if (viajeActivo) {
+          throw new Error('No se puede desactivar el chofer porque tiene un viaje en curso');
+        }
       }
-    }
-    
-    // Verificar duplicados si se están actualizando esos campos
-    if (body.dni) {
-      const [[dupDni]]: any = await conn.query(
-        "SELECT id FROM chofer WHERE dni = ? AND id != ? LIMIT 1",
-        [body.dni, id]
-      );
-      if (dupDni) {
-        await conn.rollback();
-        return res.status(400).json({ error: "Ya existe un chofer registrado con ese DNI" });
+
+      // Validar duplicados si vienen
+      if (body.dni && body.dni !== existing.dni) {
+        const dup = await tx.chofer.findUnique({ where: { dni: body.dni } });
+        if (dup) throw new Error("Ya existe un chofer registrado con ese DNI");
       }
-    }
-    
-    if (body.email) {
-      const [[dupEmail]]: any = await conn.query(
-        "SELECT id FROM chofer WHERE email = ? AND id != ? LIMIT 1",
-        [body.email, id]
-      );
-      if (dupEmail) {
-        await conn.rollback();
-        return res.status(400).json({ error: "Ya existe un chofer registrado con ese email" });
+      if (body.email && body.email !== existing.email) {
+        const dup = await tx.chofer.findUnique({ where: { email: body.email } });
+        if (dup) throw new Error("Ya existe un chofer registrado con ese email");
       }
-    }
-    
-    if (body.licencia) {
-      const [[dupLicencia]]: any = await conn.query(
-        "SELECT id FROM chofer WHERE licencia = ? AND id != ? LIMIT 1",
-        [body.licencia, id]
-      );
-      if (dupLicencia) {
-        await conn.rollback();
-        return res.status(400).json({ error: "Ya existe un chofer registrado con ese número de licencia" });
+
+      let nuevoEstado = body.estado;
+      if (body.activo === false && !body.estado) {
+        nuevoEstado = 'inactivo';
+      } else if (body.activo === true && !body.estado) {
+        nuevoEstado = 'disponible';
       }
-    }
 
-    // Si cambia el email, mantener en sync el usuario.usuario
-    const updatesEmail = Object.prototype.hasOwnProperty.call(body, "email");
+      // Preparamos data para chofer
+      const dataToUpdate: any = {};
+      if (body.nombre !== undefined) dataToUpdate.nombre = body.nombre;
+      if (body.apellido !== undefined) dataToUpdate.apellido = body.apellido;
+      if (body.dni !== undefined) dataToUpdate.dni = body.dni;
+      if (body.telefono !== undefined) dataToUpdate.telefono = body.telefono;
+      if (body.email !== undefined) dataToUpdate.email = body.email;
+      if (body.licencia !== undefined) dataToUpdate.licencia = body.licencia;
+      if (body.fecha_vencimiento_licencia !== undefined) {
+        dataToUpdate.fecha_vencimiento_licencia = body.fecha_vencimiento_licencia ? new Date(body.fecha_vencimiento_licencia) : null;
+      }
+      if (body.activo !== undefined) dataToUpdate.activo = body.activo;
+      if (nuevoEstado !== undefined) dataToUpdate.estado = nuevoEstado;
 
-    // Actualizar chofer dinámicamente
-    const sql = `UPDATE chofer SET ${setParts.join(", ")} WHERE id = ?`;
-    const [cRes]: any = await conn.query(sql, [...values, id]);
+      const chofer = await tx.chofer.update({
+        where: { id },
+        data: dataToUpdate,
+        include: { usuario: true }
+      });
 
-    if (cRes.affectedRows === 0) {
-      await conn.rollback();
-      return res.status(404).json({ error: "Chofer no encontrado" });
-    }
+      // Actualizar email de usuario si cambió
+      if (body.email && existing.usuario_id) {
+        await tx.usuario.update({
+          where: { id: existing.usuario_id },
+          data: { usuario: body.email }
+        });
+        // Refrescar include
+        if (chofer.usuario) chofer.usuario.usuario = body.email;
+      }
 
-    if (updatesEmail) {
-      // actualizar el usuario vinculado si existe cambio de email
-      await conn.query(
-        `UPDATE usuario 
-         SET usuario = ? 
-         WHERE id = (SELECT usuario_id FROM chofer WHERE id = ?)`,
-        [body.email, id]
-      );
-    }
+      return chofer;
+    });
 
-    await conn.commit();
+    const dto = {
+      chofer_id: choferActualizado.id,
+      nombre: choferActualizado.nombre,
+      apellido: choferActualizado.apellido,
+      dni: choferActualizado.dni,
+      telefono: choferActualizado.telefono,
+      chofer_email: choferActualizado.email,
+      licencia: choferActualizado.licencia,
+      fecha_vencimiento_licencia: choferActualizado.fecha_vencimiento_licencia?.toISOString().split('T')[0] || null,
+      chofer_activo: choferActualizado.activo,
+      chofer_estado: choferActualizado.estado,
+      chofer_usuario_id: choferActualizado.usuario_id,
+      usuario_id: choferActualizado.usuario?.id,
+      usuario: choferActualizado.usuario?.usuario,
+      usuario_rol_id: choferActualizado.usuario?.rol_id,
+      usuario_activo: choferActualizado.usuario?.activo
+    };
 
-    // Devolver el recurso actualizado
-    const [rows] = await conn.query(
-      `SELECT
-         c.id AS chofer_id,
-         c.nombre,
-         c.apellido,
-         c.dni,
-         c.telefono,
-         c.email AS chofer_email,
-         c.licencia,
-         c.fecha_vencimiento_licencia,
-         c.activo AS chofer_activo,
-         c.estado AS chofer_estado,
-         c.usuario_id AS chofer_usuario_id,
-         u.id AS usuario_id,
-         u.usuario AS usuario,
-         u.rol_id AS usuario_rol_id,
-         u.activo AS usuario_activo
-       FROM chofer c
-       JOIN usuario u ON u.id = c.usuario_id
-       WHERE c.id = ? LIMIT 1`,
-      [id]
-    );
-    const row = (rows as any[])[0];
-    return res.status(200).json({ actualizado: true, chofer: row });
-  } catch (e) {
-    await conn.rollback();
+    return res.status(200).json({ actualizado: true, chofer: dto });
+  } catch (e: any) {
     console.error(e);
+    if (e?.message) {
+      if (e.message === "Chofer no encontrado") return res.status(404).json({ error: e.message });
+      return res.status(400).json({ error: e.message });
+    }
     return res.status(500).json({ error: "Error al actualizar chofer" });
-  } finally {
-    conn.release();
   }
 }
 
@@ -372,52 +280,31 @@ export async function actualizarPasswordChofer(
   const { password } = req.body;
   
   console.log('[ACTUALIZAR_PASSWORD] Actualizando password para chofer ID:', id);
-  console.log('[ACTUALIZAR_PASSWORD] Longitud de password recibida:', password?.length);
 
   if (!password || password.length < 6) {
-    console.log('[ACTUALIZAR_PASSWORD] Error: Password muy corta o vacía');
     return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
   }
 
-  const conn = await pool.getConnection();
   try {
-    await conn.beginTransaction();
-
-    // Obtener el usuario_id del chofer
-    const [[chofer]]: any = await conn.query(
-      "SELECT usuario_id FROM chofer WHERE id = ? LIMIT 1",
-      [id]
-    );
+    const chofer = await prisma.chofer.findUnique({
+      where: { id: Number(id) }
+    });
 
     if (!chofer || !chofer.usuario_id) {
-      await conn.rollback();
-      console.log('[ACTUALIZAR_PASSWORD] Error: Chofer no encontrado o sin usuario');
       return res.status(404).json({ error: "Chofer no encontrado o sin usuario asociado" });
     }
     
-    console.log('[ACTUALIZAR_PASSWORD] Chofer encontrado, usuario_id:', chofer.usuario_id);
-
-    // Hashear la nueva contraseña
     const hash = await hashPassword(password);
-    console.log('[ACTUALIZAR_PASSWORD] Hash generado, longitud:', hash.length);
 
-    // Actualizar la contraseña del usuario
-    const [result]: any = await conn.query(
-      "UPDATE usuario SET contrasena = ? WHERE id = ?",
-      [hash, chofer.usuario_id]
-    );
+    await prisma.usuario.update({
+      where: { id: chofer.usuario_id },
+      data: { contrasena: hash }
+    });
     
-    console.log('[ACTUALIZAR_PASSWORD] Filas afectadas:', result.affectedRows);
-
-    await conn.commit();
-    console.log('[ACTUALIZAR_PASSWORD] Contraseña actualizada exitosamente');
     return res.status(200).json({ message: "Contraseña actualizada correctamente" });
   } catch (e) {
-    await conn.rollback();
     console.error('[ACTUALIZAR_PASSWORD] Error inesperado:', e);
     return res.status(500).json({ error: "Error al actualizar la contraseña" });
-  } finally {
-    conn.release();
   }
 }
 
@@ -425,40 +312,38 @@ export async function eliminarChofer(
   req: Request<{ id: string }>,
   res: Response
 ) {
-  const { id } = req.params;
-  const conn = await pool.getConnection();
+  const idStr = req.params.id;
+  const id = Number(idStr);
+  
   try {
-    await conn.beginTransaction();
-    const [[chofer]]: any = await conn.query(
-      "SELECT id, usuario_id FROM chofer WHERE id = ? LIMIT 1",
-      [id]
-    );
+    const chofer = await prisma.chofer.findUnique({
+      where: { id }
+    });
+
     if (!chofer) {
-      await conn.rollback();
       return res.status(404).json({ error: "Chofer no encontrado" });
     }
-    // Primero borrar chofer (evita conflictos de FK si no hay ON DELETE SET NULL)
-    await conn.query("DELETE FROM chofer WHERE id = ?", [id]);
-    // Luego borrar usuario asociado (si existe)
-    if (chofer.usuario_id) {
-      await conn.query("DELETE FROM usuario WHERE id = ?", [chofer.usuario_id]);
-    }
-    await conn.commit();
+
+    await prisma.$transaction(async (tx) => {
+      await tx.chofer.delete({
+        where: { id }
+      });
+      if (chofer.usuario_id) {
+        await tx.usuario.delete({
+          where: { id: chofer.usuario_id }
+        });
+      }
+    });
+
     return res.status(200).json({ eliminado: true });
   } catch (e: any) {
-    await conn.rollback();
     console.error('Error al eliminar chofer:', e);
-    
-    // Detectar error de restricción de clave foránea
-    if (e?.code === 'ER_ROW_IS_REFERENCED_2' || e?.errno === 1451) {
+    // Prisma Foreign Key Constraint Failed Code is P2003
+    if (e.code === 'P2003') {
       return res.status(400).json({ 
-        error: 'No se puede eliminar el chofer porque está asignado a uno o más viajes',
-        code: e.code,
-        sqlMessage: e.sqlMessage
+        error: 'No se puede eliminar el chofer porque está asignado a uno o más viajes'
       });
     }
     return res.status(500).json({ error: "Error al eliminar chofer" });
-  } finally {
-    conn.release();
   }
 }

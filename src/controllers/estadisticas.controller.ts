@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
-import { pool } from "../db/pool.js";
+import { prisma } from "../db/prisma.js";
+import { Prisma } from "@prisma/client";
 import type { FiltrosEstadisticas, RespuestaEstadisticas } from "../types/estadisticas.js";
 
 /** GET /api/estadisticas */
@@ -10,93 +11,70 @@ export async function obtenerEstadisticas(
   try {
     const { chofer_id, tractor_id, semirremolque_id, servicio_id, fecha_inicio, fecha_fin, alcance } = req.query;
 
-    // Construir condiciones WHERE dinámicamente
-    const conditions: string[] = [];
-    const params: any[] = [];
+    // Construir condiciones WHERE dinámicamente usando Prisma.sql
+    const conditions: Prisma.Sql[] = [];
 
-    if (chofer_id) {
-      conditions.push("v.chofer_id = ?");
-      params.push(chofer_id);
-    }
-    if (tractor_id) {
-      conditions.push("v.tractor_id = ?");
-      params.push(tractor_id);
-    }
-    if (semirremolque_id) {
-      conditions.push("v.semirremolque_id = ?");
-      params.push(semirremolque_id);
-    }
-    if (servicio_id) {
-      conditions.push("v.servicio_id = ?");
-      params.push(servicio_id);
-    }
-    if (fecha_inicio) {
-      conditions.push("v.fecha_hora_salida >= ?");
-      params.push(fecha_inicio);
-    }
-    if (fecha_fin) {
-      conditions.push("v.fecha_hora_salida <= ?");
-      params.push(fecha_fin);
-    }
-    if (alcance) {
-      conditions.push("v.alcance = ?");
-      params.push(alcance);
-    }
+    if (chofer_id) conditions.push(Prisma.sql`v.chofer_id = ${Number(chofer_id)}`);
+    if (tractor_id) conditions.push(Prisma.sql`v.tractor_id = ${Number(tractor_id)}`);
+    if (semirremolque_id) conditions.push(Prisma.sql`v.semirremolque_id = ${Number(semirremolque_id)}`);
+    if (servicio_id) conditions.push(Prisma.sql`v.servicio_id = ${Number(servicio_id)}`);
+    if (fecha_inicio) conditions.push(Prisma.sql`v.fecha_hora_salida >= ${new Date(fecha_inicio)}`);
+    if (fecha_fin) conditions.push(Prisma.sql`v.fecha_hora_salida <= ${new Date(fecha_fin)}`);
+    if (alcance) conditions.push(Prisma.sql`v.alcance = CAST(${alcance} AS "AlcanceViaje")`);
 
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const whereClause = conditions.length > 0 
+      ? Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}` 
+      : Prisma.empty;
 
     // 1. Estadísticas Generales
-    const [generalesRows]: any = await pool.query(
-      `SELECT 
+    const generalesRows = await prisma.$queryRaw<any[]>`
+      SELECT 
         COUNT(*) as total_viajes,
         SUM(CASE WHEN estado = 'programado' THEN 1 ELSE 0 END) as viajes_programados,
         SUM(CASE WHEN estado = 'en curso' THEN 1 ELSE 0 END) as viajes_en_curso,
         SUM(CASE WHEN estado = 'finalizado' THEN 1 ELSE 0 END) as viajes_finalizados
       FROM viaje v
-      ${whereClause}`,
-      params
-    );
+      ${whereClause}
+    `;
 
     // Calcular km totales desde paradas
-    const [kmRows]: any = await pool.query(
-      `SELECT 
+    const kmRows = await prisma.$queryRaw<any[]>`
+      SELECT 
         COALESCE(SUM(
           (SELECT MAX(odometro) - MIN(odometro) 
            FROM paradas 
-           WHERE viaje_id = v.id 
-           GROUP BY viaje_id)
+           WHERE viaje_id = v.id)
         ), 0) as total_km
       FROM viaje v
-      ${whereClause}`,
-      params
-    );
+      ${whereClause}
+    `;
 
     // Contar choferes activos
-    const [choferesRows]: any = await pool.query(
-      "SELECT COUNT(*) as total FROM chofer WHERE activo = 1"
-    );
+    const choferesRows = await prisma.$queryRaw<any[]>`
+      SELECT COUNT(*) as total FROM chofer WHERE activo = true
+    `;
 
     // Contar tractores disponibles
-    const [tractoresRows]: any = await pool.query(
-      "SELECT COUNT(*) as total FROM tractores WHERE estado = 'disponible'"
-    );
+    const tractoresRows = await prisma.$queryRaw<any[]>`
+      SELECT COUNT(*) as total FROM tractores WHERE estado = 'disponible'
+    `;
 
     const generales = {
-      total_viajes: generalesRows[0].total_viajes || 0,
-      viajes_programados: generalesRows[0].viajes_programados || 0,
-      viajes_en_curso: generalesRows[0].viajes_en_curso || 0,
-      viajes_finalizados: generalesRows[0].viajes_finalizados || 0,
-      total_km_recorridos: parseFloat(kmRows[0].total_km) || 0,
-      promedio_km_por_viaje: generalesRows[0].total_viajes > 0 
-        ? (parseFloat(kmRows[0].total_km) / generalesRows[0].total_viajes) 
+      total_viajes: Number(generalesRows[0]?.total_viajes || 0),
+      viajes_programados: Number(generalesRows[0]?.viajes_programados || 0),
+      viajes_en_curso: Number(generalesRows[0]?.viajes_en_curso || 0),
+      viajes_finalizados: Number(generalesRows[0]?.viajes_finalizados || 0),
+      total_km_recorridos: parseFloat(kmRows[0]?.total_km || 0),
+      promedio_km_por_viaje: Number(generalesRows[0]?.total_viajes || 0) > 0 
+        ? (parseFloat(kmRows[0]?.total_km || 0) / Number(generalesRows[0]?.total_viajes || 1)) 
         : 0,
-      total_choferes_activos: choferesRows[0].total || 0,
-      total_tractores_disponibles: tractoresRows[0].total || 0,
+      total_choferes_activos: Number(choferesRows[0]?.total || 0),
+      total_tractores_disponibles: Number(tractoresRows[0]?.total || 0),
     };
 
     // 2. Kilómetros por Unidad (Tractor)
-    const [kilometrosPorUnidad]: any = await pool.query(
-      `SELECT 
+    const kilometrosPorUnidad = await prisma.$queryRaw<any[]>`
+      SELECT 
         t.id as tractor_id,
         t.marca as tractor_marca,
         t.modelo as tractor_modelo,
@@ -105,19 +83,18 @@ export async function obtenerEstadisticas(
         COALESCE(SUM(
           (SELECT MAX(odometro) - MIN(odometro) 
            FROM paradas 
-           WHERE viaje_id = v.id 
-           GROUP BY viaje_id)
+           WHERE viaje_id = v.id)
         ), 0) as total_km
       FROM tractores t
-      LEFT JOIN viaje v ON t.id = v.tractor_id ${conditions.length > 0 ? `AND ${conditions.join(" AND ")}` : ""}
+      LEFT JOIN viaje v ON t.id = v.tractor_id 
+        ${conditions.length > 0 ? Prisma.sql`AND ${Prisma.join(conditions, ' AND ')}` : Prisma.empty}
       GROUP BY t.id, t.marca, t.modelo, t.dominio
-      ORDER BY total_km DESC`,
-      params
-    );
+      ORDER BY total_km DESC
+    `;
 
     // 3. Viajes por Chofer
-    const [viajesPorChofer]: any = await pool.query(
-      `SELECT 
+    const viajesPorChofer = await prisma.$queryRaw<any[]>`
+      SELECT 
         c.id as chofer_id,
         c.nombre as chofer_nombre,
         c.apellido as chofer_apellido,
@@ -129,19 +106,18 @@ export async function obtenerEstadisticas(
         COALESCE(SUM(
           (SELECT MAX(odometro) - MIN(odometro) 
            FROM paradas 
-           WHERE viaje_id = v.id 
-           GROUP BY viaje_id)
+           WHERE viaje_id = v.id)
         ), 0) as total_km
       FROM chofer c
-      LEFT JOIN viaje v ON c.id = v.chofer_id ${conditions.length > 0 ? `AND ${conditions.join(" AND ")}` : ""}
+      LEFT JOIN viaje v ON c.id = v.chofer_id 
+        ${conditions.length > 0 ? Prisma.sql`AND ${Prisma.join(conditions, ' AND ')}` : Prisma.empty}
       GROUP BY c.id, c.nombre, c.apellido, c.activo
-      ORDER BY total_viajes DESC, c.apellido ASC`,
-      params
-    );
+      ORDER BY total_viajes DESC, c.apellido ASC
+    `;
 
     // 4. Inactividad de Vehículos
-    const [inactividadVehiculos]: any = await pool.query(
-      `SELECT 
+    const inactividadVehiculos = await prisma.$queryRaw<any[]>`
+      SELECT 
         t.id as tractor_id,
         t.marca as tractor_marca,
         t.modelo as tractor_modelo,
@@ -151,38 +127,36 @@ export async function obtenerEstadisticas(
         CASE 
           WHEN MAX(v.fecha_hora_salida) IS NULL THEN 999
           WHEN MAX(v.fecha_hora_salida) > NOW() THEN 0
-          ELSE DATEDIFF(NOW(), MAX(v.fecha_hora_salida))
+          ELSE EXTRACT(DAY FROM (NOW() - MAX(v.fecha_hora_salida)))
         END as dias_inactivo
       FROM tractores t
-      LEFT JOIN viaje v ON t.id = v.tractor_id AND v.estado IN ('en curso', 'finalizado')
+      LEFT JOIN viaje v ON t.id = v.tractor_id AND (v.estado = 'en curso' OR v.estado = 'finalizado')
       GROUP BY t.id, t.marca, t.modelo, t.dominio, t.estado
-      ORDER BY dias_inactivo DESC`
-    );
+      ORDER BY dias_inactivo DESC
+    `;
 
     // 5. Viajes por Mes
-    const [viajesPorMes]: any = await pool.query(
-      `SELECT 
-        DATE_FORMAT(v.fecha_hora_salida, '%Y-%m') as mes,
-        YEAR(v.fecha_hora_salida) as anio,
+    const viajesPorMes = await prisma.$queryRaw<any[]>`
+      SELECT 
+        TO_CHAR(v.fecha_hora_salida, 'YYYY-MM') as mes,
+        EXTRACT(YEAR FROM v.fecha_hora_salida) as anio,
         COUNT(*) as total_viajes,
         SUM(CASE WHEN v.estado = 'finalizado' THEN 1 ELSE 0 END) as viajes_finalizados,
         COALESCE(SUM(
           (SELECT MAX(odometro) - MIN(odometro) 
            FROM paradas 
-           WHERE viaje_id = v.id 
-           GROUP BY viaje_id)
+           WHERE viaje_id = v.id)
         ), 0) as total_km
       FROM viaje v
       ${whereClause}
-      GROUP BY DATE_FORMAT(v.fecha_hora_salida, '%Y-%m'), YEAR(v.fecha_hora_salida)
+      GROUP BY TO_CHAR(v.fecha_hora_salida, 'YYYY-MM'), EXTRACT(YEAR FROM v.fecha_hora_salida)
       ORDER BY mes DESC
-      LIMIT 12`,
-      params
-    );
+      LIMIT 12
+    `;
 
     // 6. Viajes por Servicio
-    const [viajesPorServicio]: any = await pool.query(
-      `SELECT 
+    const viajesPorServicio = await prisma.$queryRaw<any[]>`
+      SELECT 
         s.id as servicio_id,
         s.nombre as servicio_nombre,
         COUNT(v.id) as total_viajes,
@@ -190,11 +164,11 @@ export async function obtenerEstadisticas(
         SUM(CASE WHEN v.estado = 'en curso' THEN 1 ELSE 0 END) as viajes_en_curso,
         SUM(CASE WHEN v.estado = 'finalizado' THEN 1 ELSE 0 END) as viajes_finalizados
       FROM servicios s
-      LEFT JOIN viaje v ON s.id = v.servicio_id ${conditions.length > 0 ? `AND ${conditions.join(" AND ")}` : ""}
+      LEFT JOIN viaje v ON s.id = v.servicio_id 
+        ${conditions.length > 0 ? Prisma.sql`AND ${Prisma.join(conditions, ' AND ')}` : Prisma.empty}
       GROUP BY s.id, s.nombre
-      ORDER BY total_viajes DESC`,
-      params
-    );
+      ORDER BY total_viajes DESC
+    `;
 
     const respuesta: RespuestaEstadisticas = {
       generales,
@@ -204,17 +178,17 @@ export async function obtenerEstadisticas(
         tractor_modelo: row.tractor_modelo,
         tractor_dominio: row.tractor_dominio,
         total_km: parseFloat(row.total_km) || 0,
-        cantidad_viajes: row.cantidad_viajes || 0,
+        cantidad_viajes: Number(row.cantidad_viajes) || 0,
       })),
       viajes_por_chofer: viajesPorChofer.map((row: any) => ({
         chofer_id: row.chofer_id,
         chofer_nombre: row.chofer_nombre,
         chofer_apellido: row.chofer_apellido,
-        chofer_activo: row.chofer_activo === 1,
-        total_viajes: row.total_viajes || 0,
-        viajes_programados: row.viajes_programados || 0,
-        viajes_en_curso: row.viajes_en_curso || 0,
-        viajes_finalizados: row.viajes_finalizados || 0,
+        chofer_activo: row.chofer_activo,
+        total_viajes: Number(row.total_viajes) || 0,
+        viajes_programados: Number(row.viajes_programados) || 0,
+        viajes_en_curso: Number(row.viajes_en_curso) || 0,
+        viajes_finalizados: Number(row.viajes_finalizados) || 0,
         total_km: parseFloat(row.total_km) || 0,
       })),
       inactividad_vehiculos: inactividadVehiculos.map((row: any) => ({
@@ -223,30 +197,30 @@ export async function obtenerEstadisticas(
         tractor_modelo: row.tractor_modelo,
         tractor_dominio: row.tractor_dominio,
         ultimo_viaje: row.ultimo_viaje,
-        dias_inactivo: row.dias_inactivo || 0,
+        dias_inactivo: Number(row.dias_inactivo) || 0,
         estado: row.estado,
       })),
       viajes_por_mes: viajesPorMes.map((row: any) => ({
         mes: row.mes,
-        anio: row.anio,
-        total_viajes: row.total_viajes || 0,
-        viajes_finalizados: row.viajes_finalizados || 0,
+        anio: Number(row.anio),
+        total_viajes: Number(row.total_viajes) || 0,
+        viajes_finalizados: Number(row.viajes_finalizados) || 0,
         total_km: parseFloat(row.total_km) || 0,
       })),
       viajes_por_servicio: viajesPorServicio.map((row: any) => ({
         servicio_id: row.servicio_id,
         servicio_nombre: row.servicio_nombre,
-        total_viajes: row.total_viajes || 0,
-        viajes_programados: row.viajes_programados || 0,
-        viajes_en_curso: row.viajes_en_curso || 0,
-        viajes_finalizados: row.viajes_finalizados || 0,
+        total_viajes: Number(row.total_viajes) || 0,
+        viajes_programados: Number(row.viajes_programados) || 0,
+        viajes_en_curso: Number(row.viajes_en_curso) || 0,
+        viajes_finalizados: Number(row.viajes_finalizados) || 0,
       })),
     };
 
     res.json(respuesta);
   } catch (error) {
     console.error("Error al obtener estadísticas:", error);
-    res.status(500).json({ error: "Error al obtener estadísticas" });
+    res.status(500).json({ error: "Error al obtener estadísticas: " + (error as any).message });
   }
 }
 
@@ -259,24 +233,20 @@ export async function obtenerViajesDetalladosPorChofer(
     const { chofer_id } = req.params;
     const { fecha_inicio, fecha_fin } = req.query;
 
-    // Construir condiciones WHERE
-    const conditions: string[] = ["v.chofer_id = ?"];
-    const params: any[] = [chofer_id];
+    const conditions: Prisma.Sql[] = [Prisma.sql`v.chofer_id = ${Number(chofer_id)}`];
 
     if (fecha_inicio) {
-      conditions.push("v.fecha_hora_salida >= ?");
-      params.push(fecha_inicio);
+      conditions.push(Prisma.sql`v.fecha_hora_salida >= ${new Date(fecha_inicio)}`);
     }
     if (fecha_fin) {
-      conditions.push("v.fecha_hora_salida <= ?");
-      params.push(fecha_fin);
+      conditions.push(Prisma.sql`v.fecha_hora_salida <= ${new Date(fecha_fin)}`);
     }
 
-    const whereClause = `WHERE ${conditions.join(" AND ")}`;
+    const whereClause = Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`;
 
     // Obtener viajes con información de paradas y tractor
-    const [viajes]: any = await pool.query(
-      `SELECT 
+    const viajes = await prisma.$queryRaw<any[]>`
+      SELECT 
         v.id as viaje_id,
         v.fecha_hora_salida,
         v.origen,
@@ -290,35 +260,30 @@ export async function obtenerViajesDetalladosPorChofer(
       FROM viaje v
       LEFT JOIN tractores t ON v.tractor_id = t.id
       ${whereClause}
-      ORDER BY v.fecha_hora_salida DESC`,
-      params
-    );
+      ORDER BY v.fecha_hora_salida DESC
+    `;
 
     // Para cada viaje, generar tramos (origen -> destino1, destino1 -> destino2, etc)
     const tramosDetallados: any[] = [];
     
     for (const viaje of viajes) {
-      // Obtener todos los destinos del viaje ordenados
-      const [destinos]: any = await pool.query(
-        `SELECT ubicacion, orden
+      const destinos = await prisma.$queryRaw<any[]>`
+        SELECT ubicacion, orden
         FROM destinos
-        WHERE viaje_id = ?
-        ORDER BY orden ASC`,
-        [viaje.viaje_id]
-      );
+        WHERE viaje_id = ${viaje.viaje_id}
+        ORDER BY orden ASC
+      `;
 
-      // Obtener todas las paradas del viaje
-      const [paradas]: any = await pool.query(
-        `SELECT 
+      const paradas = await prisma.$queryRaw<any[]>`
+        SELECT 
           odometro,
           fecha_hora,
           tipo,
           destino_id
         FROM paradas
-        WHERE viaje_id = ?
-        ORDER BY fecha_hora ASC`,
-        [viaje.viaje_id]
-      );
+        WHERE viaje_id = ${viaje.viaje_id}
+        ORDER BY fecha_hora ASC
+      `;
 
       // Si no hay destinos, crear un solo tramo con origen y sin destino
       if (destinos.length === 0) {
@@ -338,7 +303,7 @@ export async function obtenerViajesDetalladosPorChofer(
           const minutos = fecha.getMinutes();
           const totalMinutos = hora * 60 + minutos;
 
-          const kmSegmento = paradaSiguiente.odometro - paradaActual.odometro;
+          const kmSegmento = parseFloat(paradaSiguiente.odometro) - parseFloat(paradaActual.odometro);
 
           if ((diaSemana === 6 && totalMinutos > 780) || diaSemana === 0) {
             km_100x100 += kmSegmento;
@@ -400,7 +365,7 @@ export async function obtenerViajesDetalladosPorChofer(
               const minutos = fecha.getMinutes();
               const totalMinutos = hora * 60 + minutos;
 
-              const kmSegmento = paradaSiguiente.odometro - paradaActual.odometro;
+              const kmSegmento = parseFloat(paradaSiguiente.odometro) - parseFloat(paradaActual.odometro);
 
               if ((diaSemana === 6 && totalMinutos > 780) || diaSemana === 0) {
                 km_100x100 += kmSegmento;

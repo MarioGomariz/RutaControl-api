@@ -1,0 +1,176 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Rol {
+  id       Int       @id @default(autoincrement())
+  rol      String    @unique @db.VarChar(50)
+  usuarios Usuario[]
+
+  @@map("roles")
+}
+
+model Usuario {
+  id         Int     @id @default(autoincrement())
+  usuario    String  @unique @db.VarChar(150)
+  contrasena String  @db.VarChar(255)
+  rol_id     Int
+  activo     Boolean @default(true)
+
+  rol Rol @relation(fields: [rol_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  choferes Chofer[]
+
+  @@map("usuario")
+}
+
+model Chofer {
+  id                         Int       @id @default(autoincrement())
+  nombre                     String    @db.VarChar(100)
+  apellido                   String    @db.VarChar(100)
+  dni                        String    @unique @db.VarChar(20)
+  telefono                   String?   @db.VarChar(20)
+  email                      String    @unique @db.VarChar(150)
+  licencia                   String?   @db.VarChar(50)
+  fecha_vencimiento_licencia DateTime? @db.Date
+  activo                     Boolean   @default(true)
+  estado                     String?   @default("disponible") @db.VarChar(50)
+  usuario_id                 Int?      @unique
+
+  usuario Usuario? @relation(fields: [usuario_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  viajes Viaje[]
+
+  @@map("chofer")
+}
+
+enum EstadoUnidad {
+  disponible
+  en_uso            @map("en uso")
+  en_reparacion     @map("en reparacion")
+  fuera_de_servicio @map("fuera de servicio")
+  en_viaje          @map("en viaje")
+}
+
+model Semirremolque {
+  id                            Int          @id @default(autoincrement())
+  nombre                        String       @db.VarChar(100)
+  dominio                       String       @unique @db.VarChar(20)
+  anio                          Int?         @db.SmallInt
+  estado                        EstadoUnidad @default(disponible)
+  tipo_servicio                 String?      @db.VarChar(100)
+  alcance_servicio              String?      @db.VarChar(100)
+  vencimiento_rto               DateTime?    @db.Date
+  vencimiento_visual_externa    DateTime?    @db.Date
+  vencimiento_visual_interna    DateTime?    @db.Date
+  vencimiento_espesores         DateTime?    @db.Date
+  vencimiento_prueba_hidraulica DateTime?    @db.Date
+  vencimiento_mangueras         DateTime?    @db.Date
+  vencimiento_valvula_flujo     DateTime?    @db.Date
+
+  viajes Viaje[]
+
+  @@map("semirremolque")
+}
+
+model Tractor {
+  id               Int          @id @default(autoincrement())
+  marca            String       @db.VarChar(100)
+  modelo           String       @db.VarChar(100)
+  dominio          String       @unique @db.VarChar(20)
+  anio             Int?         @db.SmallInt
+  vencimiento_rto  DateTime?    @db.Date
+  estado           EstadoUnidad @default(disponible)
+  tipo_servicio    String?      @db.VarChar(100)
+  alcance_servicio String?      @db.VarChar(100)
+
+  viajes Viaje[]
+
+  @@map("tractores")
+}
+
+model Servicio {
+  id                           Int     @id @default(autoincrement())
+  nombre                       String  @unique @db.VarChar(100)
+  descripcion                  String? @db.Text
+  requiere_prueba_hidraulica   Boolean @default(false)
+  requiere_visuales            Boolean @default(false)
+  requiere_valvula_y_mangueras Boolean @default(false)
+
+  viajes Viaje[]
+
+  @@map("servicios")
+}
+
+enum AlcanceViaje {
+  nacional
+  internacional
+}
+
+enum EstadoViaje {
+  programado
+  en_curso   @map("en curso")
+  finalizado
+}
+
+model Viaje {
+  id                Int          @id @default(autoincrement())
+  chofer_id         Int
+  tractor_id        Int
+  semirremolque_id  Int
+  servicio_id       Int
+  alcance           AlcanceViaje @default(nacional)
+  origen            String       @db.VarChar(150)
+  cantidad_destinos Int          @default(0)
+  fecha_hora_salida DateTime     @db.Timestamp(3) // Changed from DateTime mapped to datetime because Prisma DateTime matches SQL timestamp
+  estado            EstadoViaje  @default(programado)
+
+  chofer        Chofer        @relation(fields: [chofer_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  tractor       Tractor       @relation(fields: [tractor_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  semirremolque Semirremolque @relation(fields: [semirremolque_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  servicio      Servicio      @relation(fields: [servicio_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  destinos Destino[]
+  paradas  Parada[]
+
+  @@map("viaje")
+}
+
+model Destino {
+  id        Int    @id @default(autoincrement())
+  ubicacion String @db.VarChar(150)
+  viaje_id  Int
+  orden     Int
+
+  viaje   Viaje    @relation(fields: [viaje_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  paradas Parada[]
+
+  @@unique([viaje_id, orden], map: "uq_destinos_viaje_orden")
+  @@map("destinos")
+}
+
+enum TipoParada {
+  inicio
+  descanso
+  carga
+  otro
+  llegada
+}
+
+model Parada {
+  id         Int        @id @default(autoincrement())
+  viaje_id   Int
+  odometro   Decimal    @db.Decimal(10, 2)
+  ubicacion  String     @db.VarChar(150)
+  tipo       TipoParada
+  destino_id Int?
+  fecha_hora DateTime   @default(now()) @db.Timestamp(3)
+
+  viaje   Viaje    @relation(fields: [viaje_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  destino Destino? @relation(fields: [destino_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@map("paradas")
+}

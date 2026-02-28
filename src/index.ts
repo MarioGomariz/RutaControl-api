@@ -11,7 +11,7 @@ import viajesRoutes from './routes/viajes.routes.js';
 import usuariosRoutes from './routes/usuarios.routes.js';
 import paradasRoutes from './routes/paradas.routes.js';
 import estadisticasRoutes from './routes/estadisticas.routes.js';
-import { pool } from './db/pool.js';
+import { prisma } from './db/prisma.js';
 
 const app = express();
 
@@ -24,25 +24,19 @@ app.get('/health', async (_req, res) => {
   console.log('[HEALTH] Iniciando healthcheck...');
   try {
     console.log('[HEALTH] Intentando conectar a la base de datos...');
-    const [rows] = await pool.query('SELECT 1 AS ok');
-    console.log('[HEALTH] Conexión exitosa:', rows);
-    return res.json({ ok: true, db: (rows as any[])[0] });
+    const result = await prisma.$queryRaw`SELECT 1 AS ok`;
+    console.log('[HEALTH] Conexión exitosa:', result);
+    return res.json({ ok: true, db: result });
   } catch (e: any) {
     console.error('[HEALTH] Error en healthcheck:', {
       message: e.message,
-      code: e.code,
-      errno: e.errno,
-      sqlState: e.sqlState,
-      sqlMessage: e.sqlMessage,
       stack: e.stack
     });
     return res.status(500).json({ 
       ok: false, 
       error: 'DB fail',
       details: {
-        message: e.message,
-        code: e.code,
-        errno: e.errno
+        message: e.message
       }
     });
   }
@@ -68,5 +62,9 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   res.status(500).json({ error: 'Internal server error' });
 });
 
-const PORT = Number(process.env.PORT || 3001);
-app.listen(PORT, () => console.log(`API escuchando en http://localhost:${PORT}`));
+if (!process.env.VERCEL) {
+  const PORT = Number(process.env.PORT || 3001);
+  app.listen(PORT, () => console.log(`API escuchando en http://localhost:${PORT}`));
+}
+
+export default app;
