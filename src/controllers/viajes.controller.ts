@@ -193,7 +193,7 @@ export async function crearViaje(
         // Aseguramos que la comparación sea contra el inicio de hoy en Argentina
         const vencimiento = new Date(chofer.fecha_vencimiento_licencia);
         const hoyGMT3 = getTodayGMT3();
-        if (vencimiento < hoyGMT3) {
+        if (vencimiento <= hoyGMT3) {
           throw new Error('El chofer tiene la licencia vencida');
         }
       }
@@ -210,7 +210,7 @@ export async function crearViaje(
       if (tractor.vencimiento_rto) {
         const vencimiento = new Date(tractor.vencimiento_rto);
         const hoyGMT3 = getTodayGMT3();
-        if (vencimiento < hoyGMT3) {
+        if (vencimiento <= hoyGMT3) {
           throw new Error('El tractor tiene el RTO vencido');
         }
       }
@@ -248,7 +248,7 @@ export async function crearViaje(
           if (valor) {
             const vencimiento = new Date(valor as any);
             const hoyGMT3 = getTodayGMT3();
-            if (vencimiento < hoyGMT3) {
+            if (vencimiento <= hoyGMT3) {
               throw new Error(`El semirremolque tiene ${etiquetas[campo] || campo} vencido`);
             }
           }
